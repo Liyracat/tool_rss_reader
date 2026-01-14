@@ -1,0 +1,5 @@
+XML.title     → items.title
+XML.link      → items.link
+XML.pubDate   → 
+  parse成功  → items.published_at (ISO8601)
+  parse失敗  → items.published_date (yyyy-MM-dd)

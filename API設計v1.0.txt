@@ -1,0 +1,287 @@
+全体方針
+・DBはSQLite（既存DDL準拠）
+・取得（RSS fetch）は アプリ内スケジューラー想定
+・APIは大きく4群
+　　1.記事（items）
+　　2.タグ
+　　3.設定（sources / author_rules / keyword_rules）
+　　4.ジョブ（fetch起動・状態確認）
+
+1) 記事API（未評価/保存一覧）
+GET /items/unread
+未評価記事一覧（タブ表示の元）
+
+Query
+・source_id: int | None
+・tab: str | None
+　　・all / other / keyword（keyword時はkeyword_idかkeywordが必要）
+・keyword_id: int | None（rule_type='tab'のkeyword_rulesのID）
+・q: str | None（タイトル部分検索：任意、未評価でも使えると便利）
+・limit: int = 50
+・offset: int = 0
+・sort: str = "published_desc"（published_desc/asc, fetched_desc/asc）
+
+Response（例）
+{
+  "items": [
+    {
+      "id": 1,
+      "source_id": 2,
+      "site_name": "note 検索: OpenAI",
+      "title": "...",
+      "link": "https://...",
+      "creator_name": "....",
+      "published_at": "2026-01-14T02:03:04Z",
+      "published_date": null,
+      "status": "unread"
+    }
+  ]
+}
+
+
+GET /items/unread/tabs
+未評価画面の「タブ一覧＋件数」用（これ重要）
+
+Response
+{
+  "all_count": 123,
+  "other_count": 87,
+  "keyword_tabs": [
+    { "keyword_id": 10, "keyword": "OpenAI", "count": 12 },
+    { "keyword_id": 11, "keyword": "Siri", "count": 24 }
+  ]
+}
+
+
+keyword_tabs.count は「そのキーワードに引っかかった件数」。
+other_count は「tabキーワードに1つも当たってないunread件数」。
+
+
+POST /items/{item_id}/save
+保存ボタン（タグ入力込み）
+
+Body
+{ "tags": ["AI", "OpenAI", "考察"] }
+
+
+Behavior
+・items.status = 'saved'
+・tagsをupsertして item_tags を再構成（基本：全入れ替え）
+・Responseは更新後item
+
+
+POST /items/{item_id}/ignore
+削除ボタン（＝無視）
+・items.status = 'ignored'
+
+
+POST /items/{item_id}/unsave
+保存一覧で「保存に戻す」的に使うなら
+・ignored -> saved に戻す時用でもOK（命名は好み）
+
+
+GET /items/saved
+保存記事一覧の検索フォーム対応
+
+Query
+・source_id: int | None（サイトドロップダウン）
+・status: str | None（saved/ignored）
+・date_from: str | None（YYYY-MM-DD）
+・date_to: str | None
+・tag: str | None（タグ1つ）
+・q: str | None（タイトル部分検索）
+・limit/offset
+・sort（必須：追加済み）
+
+Note
+published_atが無い記事が混ざるので、日付検索は
+・published_at があればそれ優先
+・無ければ published_date で比較
+
+
+GET /items/{item_id}
+1件詳細（最低限）
+
+
+2) タグAPI
+GET /tags
+タグドロップダウン用（使用数順が便利）
+
+Query
+・q: str | None（前方/部分一致：どっちでも）
+
+Response
+[
+  { "name": "OpenAI", "count": 35 },
+  { "name": "考察", "count": 18 }
+]
+
+
+PUT /items/{item_id}/tags
+編集ダイアログ（タグ更新）
+
+Body
+{ "tags": ["A", "B"] }
+
+
+3) 設定API
+Sources（購読RSS）
+GET /sources
+一覧（設定画面）
+・enabled: bool | None
+・source_type: str | None
+
+Responseに last_fetched_at を含める（編集不可表示）
+
+
+POST /sources
+作成
+
+Body
+{
+  "site_name": "note 検索: OpenAI",
+  "feed_url": "https://note.com/.../rss",
+  "source_type": "search",
+  "creator_tag": "note:creatorName",
+  "is_enabled": true,
+  "fetch_interval_min": 120
+}
+
+
+PUT /sources/{source_id}
+更新（CRUD）
+
+
+DELETE /sources/{source_id}
+削除（CASCADEでitemsも消える。嫌なら論理削除に変える）
+
+Author rules（著者ルール）
+GET /author-rules
+
+Query:
+・source_id: int | None
+・rule_type: str | None（block/allow/boost）
+・q: str | None（creator_name部分一致）
+
+
+POST /author-rules
+
+
+PUT /author-rules/{rule_id}
+
+
+DELETE /author-rules/{rule_id}
+ここは「source_id + creator_name」でUNIQUEなので、POST時は重複なら409にするのが綺麗。
+
+
+Keyword rules（ピックアップ/NGワード）
+GET /keyword-rules
+
+Query:
+rule_type: str | None（mute/boost/tab）
+
+POST /keyword-rules
+
+
+PUT /keyword-rules/{rule_id}
+
+
+DELETE /keyword-rules/{rule_id}
+UI上は tab と mute が主役、boostは残してても害はない（将来スコアリングに使える）。
+
+
+4) ジョブ（RSS取得）
+アプリ内スケジューラー運用でも、手動で走らせたい時があるからAPIにしておくと便利。
+
+POST /jobs/fetch-now
+手動取得（全source or 指定のみ）
+
+Body
+{ "source_ids": [1,2,3] }
+
+Response
+{ "started": true, "source_ids": [1,2,3] }
+
+
+GET /jobs/status
+簡易ステータス（直近実行、直近エラーなど）
+※「今回は考慮しない」方針なら省略してOK
+
+FastAPIのPydanticモデル案（最小）
+from pydantic import BaseModel, HttpUrl
+from typing import Optional, List, Literal
+
+SourceType = Literal["search","tag","user","magazine"]
+ItemStatus = Literal["unread","saved","ignored"]
+RuleTypeAuthor = Literal["block","allow","boost"]
+RuleTypeKeyword = Literal["mute","boost","tab"]
+
+class SourceIn(BaseModel):
+    site_name: str
+    feed_url: str
+    source_type: SourceType
+    creator_tag: str = "note:creatorName"
+    is_enabled: bool = True
+    fetch_interval_min: int = 120
+
+class SourceOut(SourceIn):
+    id: int
+    last_fetched_at: Optional[str] = None
+
+class ItemOut(BaseModel):
+    id: int
+    source_id: int
+    site_name: str
+    title: str
+    link: str
+    creator_name: Optional[str] = None
+    published_at: Optional[str] = None
+    published_date: Optional[str] = None
+    status: ItemStatus
+
+class TagsIn(BaseModel):
+    tags: List[str]
+
+class AuthorRuleIn(BaseModel):
+    source_id: int
+    creator_name: str
+    rule_type: RuleTypeAuthor
+    memo: Optional[str] = None
+
+class KeywordRuleIn(BaseModel):
+    keyword: str
+    rule_type: RuleTypeKeyword
+
+
+実装メモ（迷子防止）
+・RSS取得処理は
+　　1.sources を enabled=1 で読む
+　　2.feedを取得してparse
+　　3.fingerprint を作って INSERT OR IGNORE
+　　4.creator_tag に従って creator_name 抽出
+　　5.last_fetched_at 更新
+・items.raw_xml はデバッグ用。重いなら保存しないでもOK（DDLでは持ってるけど、アプリ側で空でもいい）
+・タグ更新は「全入れ替え」が一番楽（削除差分地獄を避ける）
+
+ルーティング一覧（まとめ）
+Items
+・GET /items/unread
+・GET /items/unread/tabs
+・POST /items/{id}/save
+・POST /items/{id}/ignore
+・POST /items/{id}/unsave（任意）
+・GET /items/saved
+・GET /items/{id}
+・PUT /items/{id}/tags
+
+Tags
+・GET /tags
+
+Settings
+・GET/POST/PUT/DELETE /sources
+・GET/POST/PUT/DELETE /author-rules
+・GET/POST/PUT/DELETE /keyword-rules
+
+Jobs
+・POST /jobs/fetch-now
+・GET /jobs/status（任意）
