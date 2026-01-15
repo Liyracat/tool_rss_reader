@@ -22,6 +22,7 @@ export default function UnreadPage() {
   const [items, setItems] = useState([]);
   const [activeTab, setActiveTab] = useState({ type: "all" });
   const [search, setSearch] = useState("");
+  const [sortOrder, setSortOrder] = useState("desc");
   const [modalItem, setModalItem] = useState(null);
 
   const queryParams = useMemo(() => {
@@ -53,6 +54,20 @@ export default function UnreadPage() {
     loadItems();
   }, [queryParams]);
 
+  const sortedItems = useMemo(() => {
+    const getTimestamp = (item) => {
+      const raw = item.published_at || item.published_date;
+      const timestamp = Date.parse(raw);
+      return Number.isNaN(timestamp) ? 0 : timestamp;
+    };
+
+    return [...items].sort((a, b) => {
+      const diff = getTimestamp(a) - getTimestamp(b);
+      if (diff === 0) return 0;
+      return sortOrder === "asc" ? diff : -diff;
+    });
+  }, [items, sortOrder]);
+
   const handleSave = async (tags) => {
     if (!modalItem) return;
     await api.saveItem(modalItem.id, tags);
@@ -67,17 +82,39 @@ export default function UnreadPage() {
     loadItems();
   };
 
+  const handleBlock = async (item) => {
+    if (!item.creator_name) return;
+    try {
+      await api.createAuthorRule({
+        source_id: item.source_id,
+        creator_name: item.creator_name,
+        rule_type: "block"
+      });
+    } catch (error) {
+      console.warn("failed to create author rule", error);
+    }
+    await handleIgnore(item.id);
+  };
+
   return (
     <section className="page">
       <div className="page-header">
         <h2>未評価記事一覧</h2>
-        <input
-          className="search-input"
-          type="search"
-          placeholder="タイトルを検索"
-          value={search}
-          onChange={(event) => setSearch(event.target.value)}
-        />
+        <div className="page-header-actions">
+          <input
+            className="search-input"
+            type="search"
+            placeholder="タイトルを検索"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+          />
+          <button
+            type="button"
+            onClick={() => setSortOrder((prev) => (prev === "asc" ? "desc" : "asc"))}
+          >
+            公開日: {sortOrder === "asc" ? "昇順" : "降順"}
+          </button>
+        </div>
       </div>
 
       <div className="tabs">
@@ -108,7 +145,7 @@ export default function UnreadPage() {
       </div>
 
       <div className="list">
-        {items.map((item) => (
+        {sortedItems.map((item) => (
           <article key={item.id} className="card">
             <div className="card-meta">
               <span className="chip">{item.site_name}</span>
@@ -119,12 +156,23 @@ export default function UnreadPage() {
               {item.link}
             </a>
             <div className="card-actions">
-              <button className="primary" type="button" onClick={() => setModalItem(item)}>
-                保存
-              </button>
-              <button type="button" onClick={() => handleIgnore(item.id)}>
-                削除
-              </button>
+              <div className="card-actions-left">
+                <button className="primary" type="button" onClick={() => setModalItem(item)}>
+                  保存
+                </button>
+                <button type="button" onClick={() => handleIgnore(item.id)}>
+                  削除
+                </button>
+              </div>
+              {item.creator_name && (
+                <button
+                  className="card-actions-right"
+                  type="button"
+                  onClick={() => handleBlock(item)}
+                >
+                  block
+                </button>
+              )}
             </div>
           </article>
         ))}

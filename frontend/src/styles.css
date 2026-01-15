@@ -68,6 +68,12 @@ body {
   justify-content: space-between;
 }
 
+.page-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
 .search-input {
   padding: 8px 12px;
   border-radius: 8px;
@@ -137,6 +143,16 @@ body {
   display: flex;
   gap: 8px;
   margin-top: 12px;
+  align-items: center;
+}
+
+.card-actions-left {
+  display: flex;
+  gap: 8px;
+}
+
+.card-actions-right {
+  margin-left: auto;
 }
 
 button {
