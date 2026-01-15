@@ -93,7 +93,7 @@ def list_unread_items(
     keyword_id: Optional[int] = None,
     keyword: Optional[str] = None,
     q: Optional[str] = None,
-    limit: int = 50,
+    limit: Optional[int] = None,
     offset: int = 0,
     sort: str = "published_desc",
 ) -> dict:
@@ -145,9 +145,11 @@ def list_unread_items(
         "i.published_at, i.published_date, i.status "
         "FROM items i JOIN sources s ON s.id = i.source_id "
         f"WHERE {where_clause} "
-        f"ORDER BY {order_by} LIMIT ? OFFSET ?"
+        f"ORDER BY {order_by}"
     )
-    params.extend([limit, offset])
+    if limit is not None:
+        query += " LIMIT ? OFFSET ?"
+        params.extend([limit, offset])
 
     with get_connection() as conn:
         rows = conn.execute(query, params).fetchall()
