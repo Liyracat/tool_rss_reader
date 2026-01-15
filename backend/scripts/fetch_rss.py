@@ -1,0 +1,195 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import hashlib
+import logging
+import sys
+from contextlib import suppress
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Iterable, Tuple
+from urllib.request import Request, urlopen
+import xml.etree.ElementTree as ET
+
+from dateutil import parser
+
+SCRIPT_DIR = Path(__file__).resolve().parent
+BASE_DIR = SCRIPT_DIR.parent
+sys.path.append(str(BASE_DIR))
+
+from app.db import get_connection, init_db  # noqa: E402
+
+LOG_DIR = BASE_DIR / "logs"
+LOG_FILE = LOG_DIR / "fetch.log"
+DATA_DIR = BASE_DIR / "data"
+LOCK_FILE = DATA_DIR / "fetch.lock"
+
+USER_AGENT = "rss-reader-fetcher/1.0"
+REQUEST_TIMEOUT = 30
+
+
+def setup_logger() -> logging.Logger:
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+    logger = logging.getLogger("fetch_rss")
+    logger.setLevel(logging.INFO)
+
+    formatter = logging.Formatter("%(asctime)s %(levelname)s %(message)s")
+
+    stream_handler = logging.StreamHandler(sys.stdout)
+    stream_handler.setFormatter(formatter)
+
+    file_handler = logging.FileHandler(LOG_FILE, encoding="utf-8")
+    file_handler.setFormatter(formatter)
+
+    logger.addHandler(stream_handler)
+    logger.addHandler(file_handler)
+
+    return logger
+
+
+def normalize_link(link: str) -> str:
+    normalized = link.strip()
+    if normalized.endswith("/"):
+        normalized = normalized.rstrip("/")
+    return normalized
+
+
+def fingerprint_for_link(link: str) -> str:
+    normalized = normalize_link(link)
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+
+
+def local_name(tag: str) -> str:
+    return tag.rsplit("}", 1)[-1]
+
+
+def text_from_child(element: ET.Element, name: str) -> str | None:
+    for child in element:
+        if local_name(child.tag) == name:
+            if child.text and child.text.strip():
+                return child.text.strip()
+            href = child.attrib.get("href")
+            if href:
+                return href.strip()
+    return None
+
+
+def parse_pub_date(pub_date: str | None) -> Tuple[str | None, str | None]:
+    if not pub_date:
+        return None, None
+    try:
+        parsed = parser.parse(pub_date)
+        return parsed.isoformat(), None
+    except (ValueError, OverflowError):
+        return None, fallback_date(pub_date)
+
+
+def fallback_date(pub_date: str) -> str:
+    for token in ("-", "/"):
+        if token in pub_date:
+            parts = pub_date.split(token)
+            if len(parts) >= 3 and all(part.strip().isdigit() for part in parts[:3]):
+                year, month, day = (part.strip().zfill(2) for part in parts[:3])
+                return f"{year}-{month}-{day}"
+    return datetime.now(timezone.utc).date().isoformat()
+
+
+def fetch_feed(url: str) -> str:
+    request = Request(url, headers={"User-Agent": USER_AGENT})
+    with urlopen(request, timeout=REQUEST_TIMEOUT) as response:
+        charset = response.headers.get_content_charset() or "utf-8"
+        return response.read().decode(charset, errors="replace")
+
+
+def iter_entries(root: ET.Element) -> Iterable[ET.Element]:
+    entries = [element for element in root.iter() if local_name(element.tag) == "item"]
+    if entries:
+        return entries
+    return [element for element in root.iter() if local_name(element.tag) == "entry"]
+
+
+def process_source(conn, logger: logging.Logger, source: dict) -> bool:
+    source_id = source["id"]
+    feed_url = source["feed_url"]
+    now_iso = datetime.now(timezone.utc).isoformat()
+    try:
+        xml_text = fetch_feed(feed_url)
+        root = ET.fromstring(xml_text)
+        inserted = 0
+        for entry in iter_entries(root):
+            title = text_from_child(entry, "title")
+            link = text_from_child(entry, "link")
+            pub_date = text_from_child(entry, "pubDate")
+            if not pub_date:
+                pub_date = text_from_child(entry, "published") or text_from_child(entry, "updated")
+            if not title or not link:
+                logger.info("skip item: missing title/link source_id=%s", source_id)
+                continue
+            published_at, published_date = parse_pub_date(pub_date)
+            fingerprint = fingerprint_for_link(link)
+            conn.execute(
+                """
+                INSERT OR IGNORE INTO items
+                    (source_id, title, link, published_at, published_date, fingerprint)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (source_id, title, link, published_at, published_date, fingerprint),
+            )
+            inserted += 1
+        conn.execute(
+            "UPDATE sources SET last_fetched_at = ? WHERE id = ?",
+            (now_iso, source_id),
+        )
+        conn.commit()
+        logger.info(
+            "fetched source_id=%s url=%s items=%s", source_id, feed_url, inserted
+        )
+        return True
+    except Exception:
+        logger.exception("failed source_id=%s url=%s", source_id, feed_url)
+        with suppress(Exception):
+            conn.execute(
+                "UPDATE sources SET last_fetched_at = ? WHERE id = ?",
+                (now_iso, source_id),
+            )
+            conn.commit()
+        return False
+
+
+def acquire_lock() -> bool:
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    try:
+        LOCK_FILE.touch(exist_ok=False)
+    except FileExistsError:
+        return False
+    return True
+
+
+def release_lock() -> None:
+    with suppress(FileNotFoundError):
+        LOCK_FILE.unlink()
+
+
+def main() -> int:
+    logger = setup_logger()
+    if not acquire_lock():
+        logger.info("lock exists, exiting")
+        return 0
+
+    try:
+        init_db()
+        has_error = False
+        with get_connection() as conn:
+            sources = conn.execute(
+                "SELECT id, feed_url FROM sources WHERE is_enabled = 1"
+            ).fetchall()
+            for row in sources:
+                if not process_source(conn, logger, dict(row)):
+                    has_error = True
+        return 1 if has_error else 0
+    finally:
+        release_lock()
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
