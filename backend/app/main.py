@@ -27,6 +27,7 @@ class SourceIn(BaseModel):
 class SourceOut(SourceIn):
     id: int
     last_fetched_at: Optional[str] = None
+    created_at: Optional[str] = None
 
 
 class ItemOut(BaseModel):
@@ -348,8 +349,8 @@ def list_sources(
 
     query = (
         "SELECT id, site_name, feed_url, source_type, creator_tag, is_enabled, "
-        "fetch_interval_min, last_fetched_at FROM sources "
-        f"{where_clause} ORDER BY id"
+        "fetch_interval_min, last_fetched_at, created_at FROM sources "
+        f"{where_clause} ORDER BY created_at DESC"
     )
 
     with get_connection() as conn:
@@ -376,7 +377,7 @@ def create_source(payload: SourceIn) -> SourceOut:
         source_id = cur.lastrowid
         row = conn.execute(
             "SELECT id, site_name, feed_url, source_type, creator_tag, is_enabled, "
-            "fetch_interval_min, last_fetched_at FROM sources WHERE id = ?",
+            "fetch_interval_min, last_fetched_at, created_at FROM sources WHERE id = ?",
             (source_id,),
         ).fetchone()
         conn.commit()
@@ -403,7 +404,7 @@ def update_source(source_id: int, payload: SourceIn) -> SourceOut:
             raise HTTPException(status_code=404, detail="source not found")
         row = conn.execute(
             "SELECT id, site_name, feed_url, source_type, creator_tag, is_enabled, "
-            "fetch_interval_min, last_fetched_at FROM sources WHERE id = ?",
+            "fetch_interval_min, last_fetched_at, created_at FROM sources WHERE id = ?",
             (source_id,),
         ).fetchone()
         conn.commit()
@@ -440,9 +441,9 @@ def list_author_rules(
 
     where_clause = f"WHERE {' AND '.join(where)}" if where else ""
     query = (
-        "SELECT ar.id, ar.source_id, s.site_name, ar.creator_name, ar.rule_type, ar.memo "
-        "FROM author_rules ar JOIN sources s ON s.id = ar.source_id "
-        f"{where_clause} ORDER BY ar.id"
+        "SELECT ar.id, ar.source_id, s.site_name, ar.creator_name, ar.rule_type, ar.memo, "
+        "ar.created_at FROM author_rules ar JOIN sources s ON s.id = ar.source_id "
+        f"{where_clause} ORDER BY ar.created_at DESC"
     )
 
     with get_connection() as conn:
@@ -465,7 +466,8 @@ def create_author_rule(payload: AuthorRuleIn) -> dict:
             raise
         rule_id = cur.lastrowid
         row = conn.execute(
-            "SELECT id, source_id, creator_name, rule_type, memo FROM author_rules WHERE id = ?",
+            "SELECT id, source_id, creator_name, rule_type, memo, created_at "
+            "FROM author_rules WHERE id = ?",
             (rule_id,),
         ).fetchone()
         conn.commit()
@@ -482,7 +484,8 @@ def update_author_rule(rule_id: int, payload: AuthorRuleIn) -> dict:
         if cur.rowcount == 0:
             raise HTTPException(status_code=404, detail="author rule not found")
         row = conn.execute(
-            "SELECT id, source_id, creator_name, rule_type, memo FROM author_rules WHERE id = ?",
+            "SELECT id, source_id, creator_name, rule_type, memo, created_at "
+            "FROM author_rules WHERE id = ?",
             (rule_id,),
         ).fetchone()
         conn.commit()
@@ -508,8 +511,8 @@ def list_keyword_rules(rule_type: Optional[str] = None) -> list[dict]:
         params.append(rule_type)
     where_clause = f"WHERE {' AND '.join(where)}" if where else ""
     query = (
-        "SELECT id, keyword, rule_type FROM keyword_rules "
-        f"{where_clause} ORDER BY id"
+        "SELECT id, keyword, rule_type, created_at FROM keyword_rules "
+        f"{where_clause} ORDER BY created_at DESC"
     )
 
     with get_connection() as conn:
@@ -527,7 +530,7 @@ def create_keyword_rule(payload: KeywordRuleIn) -> dict:
         )
         rule_id = cur.lastrowid
         row = conn.execute(
-            "SELECT id, keyword, rule_type FROM keyword_rules WHERE id = ?",
+            "SELECT id, keyword, rule_type, created_at FROM keyword_rules WHERE id = ?",
             (rule_id,),
         ).fetchone()
         conn.commit()
@@ -544,7 +547,7 @@ def update_keyword_rule(rule_id: int, payload: KeywordRuleIn) -> dict:
         if cur.rowcount == 0:
             raise HTTPException(status_code=404, detail="keyword rule not found")
         row = conn.execute(
-            "SELECT id, keyword, rule_type FROM keyword_rules WHERE id = ?",
+            "SELECT id, keyword, rule_type, created_at FROM keyword_rules WHERE id = ?",
             (rule_id,),
         ).fetchone()
         conn.commit()
