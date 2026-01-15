@@ -192,6 +192,33 @@ button.ghost {
   gap: 12px;
 }
 
+.panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.panel-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.accordion-toggle {
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid #d1d5db;
+  background: #f9fafb;
+  color: #111827;
+  font-size: 12px;
+}
+
+.accordion-toggle:hover {
+  background: #eef2ff;
+  border-color: #c7d2fe;
+}
+
 .grid-form {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
@@ -238,6 +265,27 @@ button.ghost {
 .table-actions {
   display: flex;
   gap: 6px;
+}
+
+.pager {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  font-size: 12px;
+  color: #4b5563;
+}
+
+.pager button {
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid #d1d5db;
+  background: #fff;
+}
+
+.pager button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .empty {

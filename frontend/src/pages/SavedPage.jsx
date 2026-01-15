@@ -18,7 +18,7 @@ function formatDate(value, fallback) {
 export default function SavedPage() {
   const [filters, setFilters] = useState({
     sourceId: "",
-    status: "",
+    status: "saved",
     dateFrom: "",
     dateTo: "",
     tag: "",
