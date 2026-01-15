@@ -152,6 +152,23 @@ def list_unread_items(
         params.extend([limit, offset])
 
     with get_connection() as conn:
+        ignored_params: list[object] = []
+        ignored_where = ["items.status = 'unread'"]
+        if source_id is not None:
+            ignored_where.append("items.source_id = ?")
+            ignored_params.append(source_id)
+        conn.execute(
+            "UPDATE items SET status = 'ignored' "
+            f"WHERE {' AND '.join(ignored_where)} "
+            "AND EXISTS ("
+            "SELECT 1 FROM author_rules ar "
+            "WHERE ar.rule_type = 'block' "
+            "AND ar.source_id = items.source_id "
+            "AND ar.creator_name = items.creator_name"
+            ")",
+            ignored_params,
+        )
+        conn.commit()
         rows = conn.execute(query, params).fetchall()
 
     return {"items": rows_to_dicts(rows)}
