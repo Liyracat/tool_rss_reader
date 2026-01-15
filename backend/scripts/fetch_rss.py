@@ -74,6 +74,39 @@ def text_from_child(element: ET.Element, name: str) -> str | None:
     return None
 
 
+def normalize_tag_name(tag: str) -> str:
+    if ":" in tag:
+        return tag.split(":", 1)[1]
+    return tag
+
+
+def normalize_creator_tag(creator_tag: str) -> str:
+    return creator_tag.split(":", 1)[-1].strip()
+
+
+def extract_creator_name(entry: ET.Element, creator_tag: str) -> str | None:
+    tag_name = normalize_creator_tag(creator_tag)
+    for child in entry:
+        if local_name(child.tag) == tag_name:
+            if child.text and child.text.strip():
+                return child.text.strip()
+            nested_name = text_from_child(child, "name")
+            if nested_name:
+                return nested_name
+            attrib_name = child.attrib.get("name")
+            if attrib_name and attrib_name.strip():
+                return attrib_name.strip()
+    return None
+
+
+def load_blocked_authors(conn, source_id: int) -> set[str]:
+    rows = conn.execute(
+        "SELECT creator_name FROM author_rules WHERE source_id = ? AND rule_type = 'block'",
+        (source_id,),
+    ).fetchall()
+    return {row["creator_name"] for row in rows}
+
+
 def parse_pub_date(pub_date: str | None) -> Tuple[str | None, str | None]:
     if not pub_date:
         return None, None
@@ -111,6 +144,8 @@ def iter_entries(root: ET.Element) -> Iterable[ET.Element]:
 def process_source(conn, logger: logging.Logger, source: dict) -> bool:
     source_id = source["id"]
     feed_url = source["feed_url"]
+    creator_tag = source["creator_tag"]
+    blocked_authors = load_blocked_authors(conn, source_id)
     now_iso = datetime.now(timezone.utc).isoformat()
     try:
         xml_text = fetch_feed(feed_url)
@@ -125,15 +160,21 @@ def process_source(conn, logger: logging.Logger, source: dict) -> bool:
             if not title or not link:
                 logger.info("skip item: missing title/link source_id=%s", source_id)
                 continue
+            creator_name = extract_creator_name(entry, creator_tag)
+            if creator_name and creator_name in blocked_authors:
+                logger.info(
+                    "skip item: blocked author source_id=%s creator=%s", source_id, creator_name
+                )
+                continue
             published_at, published_date = parse_pub_date(pub_date)
             fingerprint = fingerprint_for_link(link)
             conn.execute(
                 """
                 INSERT OR IGNORE INTO items
-                    (source_id, title, link, published_at, published_date, fingerprint)
-                VALUES (?, ?, ?, ?, ?, ?)
+                    (source_id, title, link, creator_name, published_at, published_date, fingerprint)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
-                (source_id, title, link, published_at, published_date, fingerprint),
+                (source_id, title, link, creator_name, published_at, published_date, fingerprint),
             )
             inserted += 1
         conn.execute(
@@ -181,7 +222,7 @@ def main() -> int:
         has_error = False
         with get_connection() as conn:
             sources = conn.execute(
-                "SELECT id, feed_url FROM sources WHERE is_enabled = 1"
+                "SELECT id, feed_url, creator_tag FROM sources WHERE is_enabled = 1"
             ).fetchall()
             for row in sources:
                 if not process_source(conn, logger, dict(row)):
