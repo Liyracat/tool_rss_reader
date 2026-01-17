@@ -163,6 +163,11 @@ body {
   color: #4b5563;
 }
 
+.metric-alert {
+  color: #dc2626;
+  font-weight: 700;
+}
+
 button {
   padding: 6px 12px;
   border-radius: 8px;

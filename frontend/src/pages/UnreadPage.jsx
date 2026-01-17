@@ -30,9 +30,19 @@ function formatCount(value) {
   return value;
 }
 
+function formatRatio(item) {
+  const total = Number(item.total_character_count);
+  const pCount = Number(item.p_count) || 0;
+  const brCount = Number(item.br_in_p_count) || 0;
+  const denominator = pCount + brCount;
+  if (!Number.isFinite(total) || denominator <= 0) return "-";
+  return (total / denominator).toFixed(2);
+}
+
 export default function UnreadPage() {
   const [tabs, setTabs] = useState(tabsInitial);
   const [items, setItems] = useState([]);
+  const [totalCount, setTotalCount] = useState(0);
   const [activeTab, setActiveTab] = useState({ type: "all" });
   const [search, setSearch] = useState("");
   const [sortOrder, setSortOrder] = useState("desc");
@@ -40,20 +50,30 @@ export default function UnreadPage() {
   const [page, setPage] = useState(1);
   const [metricsLoadingId, setMetricsLoadingId] = useState(null);
 
-  const queryParams = useMemo(() => {
+  const baseParams = useMemo(() => {
     const params = {
       tab: activeTab.type,
-      q: search || undefined
+      q: search || undefined,
+      sort: sortOrder === "asc" ? "published_asc" : "published_desc"
     };
     if (activeTab.type === "keyword") {
       params.keyword_id = activeTab.keywordId;
     }
-    return buildQuery(params);
-  }, [activeTab, search]);
+    return params;
+  }, [activeTab, search, sortOrder]);
+
+  const queryParams = useMemo(() => {
+    return buildQuery({
+      ...baseParams,
+      limit: PAGE_SIZE,
+      offset: (page - 1) * PAGE_SIZE
+    });
+  }, [baseParams, page]);
 
   const loadItems = async () => {
     const response = await api.getUnreadItems(queryParams);
     setItems(response.items);
+    setTotalCount(response.total ?? 0);
   };
 
   const loadTabs = async () => {
@@ -71,24 +91,9 @@ export default function UnreadPage() {
 
   useEffect(() => {
     setPage(1);
-  }, [queryParams]);
+  }, [baseParams]);
 
-  const sortedItems = useMemo(() => {
-    const getTimestamp = (item) => {
-      const raw = item.published_at || item.published_date;
-      const timestamp = Date.parse(raw);
-      return Number.isNaN(timestamp) ? 0 : timestamp;
-    };
-
-    return [...items].sort((a, b) => {
-      const diff = getTimestamp(a) - getTimestamp(b);
-      if (diff === 0) return 0;
-      return sortOrder === "asc" ? diff : -diff;
-    });
-  }, [items, sortOrder]);
-
-  const totalPages = Math.max(1, Math.ceil(sortedItems.length / PAGE_SIZE));
-  const pagedItems = sortedItems.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
 
   useEffect(() => {
     if (page > totalPages) {
@@ -136,11 +141,30 @@ export default function UnreadPage() {
 
   const renderMetrics = (item) => (
     <div className="card-metrics">
-      課: {formatCta(item.has_purechase_cta)} | 合計: {formatCount(item.total_character_count)} | h2:{" "}
-      {formatCount(item.h2_count)} | h3: {formatCount(item.h3_count)} | img:{" "}
-      {formatCount(item.img_count)} | link: {formatCount(item.link_count)} | p:{" "}
-      {formatCount(item.p_count)} | br: {formatCount(item.br_in_p_count)} | 句点:{" "}
-      {formatCount(item.period_count)}
+      <span className={item.has_purechase_cta === 1 ? "metric-alert" : undefined}>
+        課: {formatCta(item.has_purechase_cta)}
+      </span> |{" "}
+      <span className={item.total_character_count < 500 && item.total_character_count != null ? "metric-alert" : undefined}>
+        合計: {formatCount(item.total_character_count)}
+      </span> |{" "}
+      <span className={item.h2_count <= 1 && item.h3_count <= 1 && item.total_character_count > 1000 ? "metric-alert" : undefined}>
+        h2: {formatCount(item.h2_count)}
+      </span> |{" "}
+      <span className={item.h2_count <= 1 && item.h3_count <= 1 && item.total_character_count > 1000 ? "metric-alert" : undefined}>
+      h3: {formatCount(item.h3_count)}
+      </span> |{" "}
+      img: {formatCount(item.img_count)} |{" "}
+      link: {formatCount(item.link_count)} |{" "}
+      p: {formatCount(item.p_count)} |{" "}
+      <span className={item.br_in_p_count === 0 ? "metric-alert" : undefined}>
+        br: {formatCount(item.br_in_p_count)}
+      </span> |{" "}
+      <span className={formatRatio(item) > 50 || formatRatio(item) < 10 ? "metric-alert" : undefined}>
+        文字数/改行: {formatRatio(item)}
+      </span> |{" "}
+      <span className={item.period_count > (item.p_count + item.br_in_p_count) ? "metric-alert" : undefined}>
+        句点: {formatCount(item.period_count)}
+      </span>
     </div>
   );
 
@@ -193,7 +217,7 @@ export default function UnreadPage() {
       </div>
 
       <div className="list">
-        {pagedItems.map((item) => (
+        {items.map((item) => (
           <article key={item.id} className="card">
             <div className="card-meta">
               <span className="chip">{item.site_name}</span>
@@ -245,7 +269,7 @@ export default function UnreadPage() {
           前へ
         </button>
         <span>
-          {page} / {totalPages} (全{sortedItems.length}件)
+          {page} / {totalPages} (全{totalCount}件)
         </span>
         <button
           type="button"

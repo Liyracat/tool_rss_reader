@@ -2,6 +2,12 @@ import { useEffect, useState } from "react";
 import { api } from "../api.js";
 
 const PAGE_SIZE = 10;
+const FETCH_INTERVAL_OPTIONS = [
+  { value: 1440, label: "1日に1回" },
+  { value: 180, label: "3時間に1回" },
+  { value: 60, label: "1時間に1回" },
+  { value: 15, label: "15分に1回" }
+];
 
 const emptySource = {
   site_name: "",
@@ -9,7 +15,7 @@ const emptySource = {
   source_type: "search",
   creator_tag: "note:creatorName",
   is_enabled: true,
-  fetch_interval_min: 120
+  fetch_interval_min: 180
 };
 
 const emptyAuthorRule = {
@@ -46,6 +52,18 @@ export default function SettingsPage() {
   const [sourcePage, setSourcePage] = useState(1);
   const [authorPage, setAuthorPage] = useState(1);
   const [keywordPage, setKeywordPage] = useState(1);
+
+  const ensureIntervalOption = (value) => {
+    const numericValue = Number(value);
+    const exists = FETCH_INTERVAL_OPTIONS.some((option) => option.value === numericValue);
+    if (exists || Number.isNaN(numericValue)) {
+      return FETCH_INTERVAL_OPTIONS;
+    }
+    return [
+      { value: numericValue, label: `現在の値(${numericValue}分)` },
+      ...FETCH_INTERVAL_OPTIONS
+    ];
+  };
 
   const loadData = async () => {
     const [sourceData, authorData, keywordData] = await Promise.all([
@@ -231,14 +249,18 @@ export default function SettingsPage() {
                 />
                 有効
               </label>
-              <input
-                type="number"
-                placeholder="同期間隔(分)"
+              <select
                 value={sourceDraft.fetch_interval_min}
                 onChange={(event) =>
                   setSourceDraft({ ...sourceDraft, fetch_interval_min: event.target.value })
                 }
-              />
+              >
+                {FETCH_INTERVAL_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
               <button className="primary" type="button" onClick={handleCreateSource}>
                 追加
               </button>
@@ -313,8 +335,7 @@ export default function SettingsPage() {
                     />
                     有効
                   </label>
-                  <input
-                    type="number"
+                  <select
                     value={source.fetch_interval_min}
                     onChange={(event) =>
                       setSources((prev) =>
@@ -325,7 +346,13 @@ export default function SettingsPage() {
                         )
                       )
                     }
-                  />
+                  >
+                    {ensureIntervalOption(source.fetch_interval_min).map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
                   <div className="table-actions">
                     <button type="button" onClick={() => handleUpdateSource(source)}>
                       保存

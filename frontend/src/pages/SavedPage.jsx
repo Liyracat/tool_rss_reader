@@ -29,6 +29,15 @@ function formatCount(value) {
   return value;
 }
 
+function formatRatio(item) {
+  const total = Number(item.total_character_count);
+  const pCount = Number(item.p_count) || 0;
+  const brCount = Number(item.br_in_p_count) || 0;
+  const denominator = pCount + brCount;
+  if (!Number.isFinite(total) || denominator <= 0) return "-";
+  return (total / denominator).toFixed(2);
+}
+
 export default function SavedPage() {
   const [filters, setFilters] = useState({
     sourceId: "",
@@ -40,14 +49,15 @@ export default function SavedPage() {
     sort: "published_desc"
   });
   const [items, setItems] = useState([]);
+  const [totalCount, setTotalCount] = useState(0);
   const [sources, setSources] = useState([]);
   const [tags, setTags] = useState([]);
   const [editItem, setEditItem] = useState(null);
   const [page, setPage] = useState(1);
   const [metricsLoadingId, setMetricsLoadingId] = useState(null);
 
-  const queryParams = useMemo(() => {
-    return buildQuery({
+  const baseParams = useMemo(() => {
+    return {
       source_id: filters.sourceId || undefined,
       status: filters.status || undefined,
       date_from: filters.dateFrom || undefined,
@@ -55,8 +65,16 @@ export default function SavedPage() {
       tag: filters.tag || undefined,
       q: filters.q || undefined,
       sort: filters.sort
-    });
+    };
   }, [filters]);
+
+  const queryParams = useMemo(() => {
+    return buildQuery({
+      ...baseParams,
+      limit: PAGE_SIZE,
+      offset: (page - 1) * PAGE_SIZE
+    });
+  }, [baseParams, page]);
 
   const loadFilters = async () => {
     const [sourceData, tagData] = await Promise.all([api.listSources(), api.listTags()]);
@@ -67,6 +85,7 @@ export default function SavedPage() {
   const loadItems = async () => {
     const response = await api.getSavedItems(queryParams);
     setItems(response.items);
+    setTotalCount(response.total ?? 0);
   };
 
   useEffect(() => {
@@ -79,10 +98,9 @@ export default function SavedPage() {
 
   useEffect(() => {
     setPage(1);
-  }, [queryParams]);
+  }, [baseParams]);
 
-  const totalPages = Math.max(1, Math.ceil(items.length / PAGE_SIZE));
-  const pagedItems = items.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
 
   useEffect(() => {
     if (page > totalPages) {
@@ -117,11 +135,18 @@ export default function SavedPage() {
 
   const renderMetrics = (item) => (
     <div className="card-metrics">
-      課: {formatCta(item.has_purechase_cta)} | 合計: {formatCount(item.total_character_count)} | h2:{" "}
-      {formatCount(item.h2_count)} | h3: {formatCount(item.h3_count)} | img:{" "}
-      {formatCount(item.img_count)} | link: {formatCount(item.link_count)} | p:{" "}
-      {formatCount(item.p_count)} | br: {formatCount(item.br_in_p_count)} | 句点:{" "}
-      {formatCount(item.period_count)}
+      <span className={item.has_purechase_cta === 1 ? "metric-alert" : undefined}>
+        課: {formatCta(item.has_purechase_cta)}
+      </span> |{" "}
+      <span className={item.total_character_count < 500 && item.total_character_count != null ? "metric-alert" : undefined}>
+        合計: {formatCount(item.total_character_count)}
+      </span> | h2: {formatCount(item.h2_count)} | h3:{" "}
+      {formatCount(item.h3_count)} | img: {formatCount(item.img_count)} | link:{" "}
+      {formatCount(item.link_count)} | p: {formatCount(item.p_count)} |{" "}
+      <span className={item.br_in_p_count === 0 ? "metric-alert" : undefined}>
+        br: {formatCount(item.br_in_p_count)}
+      </span>{" "}
+      | 文字数/改行: {formatRatio(item)} | 句点: {formatCount(item.period_count)}
     </div>
   );
 
@@ -208,7 +233,7 @@ export default function SavedPage() {
       </div>
 
       <div className="list">
-        {pagedItems.map((item) => (
+        {items.map((item) => (
           <article key={item.id} className="card">
             <div className="card-meta">
               <span className="chip">{item.site_name}</span>
@@ -255,7 +280,7 @@ export default function SavedPage() {
           前へ
         </button>
         <span>
-          {page} / {totalPages} (全{items.length}件)
+          {page} / {totalPages} (全{totalCount}件)
         </span>
         <button
           type="button"
