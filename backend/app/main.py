@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+import logging
 from typing import Literal, Optional
 
 from fastapi import FastAPI, HTTPException, Query
@@ -69,6 +70,7 @@ class FetchJobStatus(BaseModel):
 
 
 app = FastAPI(title="RSS Reader")
+logger = logging.getLogger(__name__)
 
 app.add_middleware(
     CORSMiddleware,
@@ -152,6 +154,7 @@ def list_unread_items(
         params.extend([limit, offset])
 
     with get_connection() as conn:
+        logger.info("DBクエリ開始: list_unread_items")
         ignored_params: list[object] = []
         ignored_where = ["items.status = 'unread'"]
         if source_id is not None:
@@ -170,13 +173,18 @@ def list_unread_items(
         )
         conn.commit()
         rows = conn.execute(query, params).fetchall()
+        logger.info("DBクエリ終了: list_unread_items")
 
-    return {"items": rows_to_dicts(rows)}
+    logger.info("JSON化開始: list_unread_items")
+    items = rows_to_dicts(rows)
+    logger.info("JSON化終了: list_unread_items")
+    return {"items": items}
 
 
 @app.get("/items/unread/tabs", response_model=dict)
 def unread_tabs() -> dict:
     with get_connection() as conn:
+        logger.info("DBクエリ開始: unread_tabs")
         total = conn.execute("SELECT COUNT(*) FROM items WHERE status = 'unread'").fetchone()[0]
         keyword_tabs = conn.execute(
             "SELECT kr.id, kr.keyword, "
@@ -191,14 +199,18 @@ def unread_tabs() -> dict:
             "AND NOT EXISTS (SELECT 1 FROM keyword_rules kr "
             "WHERE kr.rule_type = 'tab' AND i.title LIKE '%' || kr.keyword || '%')"
         ).fetchone()[0]
+        logger.info("DBクエリ終了: unread_tabs")
 
-    return {
+    logger.info("JSON化開始: unread_tabs")
+    response = {
         "all_count": total,
         "other_count": other_count,
         "keyword_tabs": [
             {"keyword_id": row[0], "keyword": row[1], "count": row[2]} for row in keyword_tabs
         ],
     }
+    logger.info("JSON化終了: unread_tabs")
+    return response
 
 
 @app.post("/items/{item_id}/save", response_model=ItemOut)
@@ -299,14 +311,20 @@ def list_saved_items(
     params.extend([limit, offset])
 
     with get_connection() as conn:
+        logger.info("DBクエリ開始: list_saved_items")
         rows = conn.execute(query, params).fetchall()
+        logger.info("DBクエリ終了: list_saved_items")
 
-    return {"items": rows_to_dicts(rows)}
+    logger.info("JSON化開始: list_saved_items")
+    items = rows_to_dicts(rows)
+    logger.info("JSON化終了: list_saved_items")
+    return {"items": items}
 
 
 @app.get("/items/{item_id}")
 def get_item(item_id: int) -> dict:
     with get_connection() as conn:
+        logger.info("DBクエリ開始: get_item")
         row = conn.execute(
             "SELECT i.*, s.site_name FROM items i JOIN sources s ON s.id = i.source_id WHERE i.id = ?",
             (item_id,),
@@ -317,9 +335,12 @@ def get_item(item_id: int) -> dict:
             "SELECT t.name FROM tags t JOIN item_tags it ON it.tag_id = t.id WHERE it.item_id = ?",
             (item_id,),
         ).fetchall()
+        logger.info("DBクエリ終了: get_item")
 
+    logger.info("JSON化開始: get_item")
     item = dict(row)
     item["tags"] = [tag[0] for tag in tags]
+    logger.info("JSON化終了: get_item")
     return item
 
 
@@ -344,8 +365,13 @@ def list_tags(q: Optional[str] = None) -> list[dict]:
         f"{where} GROUP BY t.id ORDER BY count DESC"
     )
     with get_connection() as conn:
+        logger.info("DBクエリ開始: list_tags")
         rows = conn.execute(query, params).fetchall()
-    return rows_to_dicts(rows)
+        logger.info("DBクエリ終了: list_tags")
+    logger.info("JSON化開始: list_tags")
+    result = rows_to_dicts(rows)
+    logger.info("JSON化終了: list_tags")
+    return result
 
 
 @app.get("/sources", response_model=list[SourceOut])
@@ -373,9 +399,14 @@ def list_sources(
     )
 
     with get_connection() as conn:
+        logger.info("DBクエリ開始: list_sources")
         rows = conn.execute(query, params).fetchall()
+        logger.info("DBクエリ終了: list_sources")
 
-    return [SourceOut(**row) for row in rows]
+    logger.info("JSON化開始: list_sources")
+    sources = [SourceOut(**row) for row in rows]
+    logger.info("JSON化終了: list_sources")
+    return sources
 
 
 @app.post("/sources", response_model=SourceOut)
@@ -466,9 +497,14 @@ def list_author_rules(
     )
 
     with get_connection() as conn:
+        logger.info("DBクエリ開始: list_author_rules")
         rows = conn.execute(query, params).fetchall()
+        logger.info("DBクエリ終了: list_author_rules")
 
-    return rows_to_dicts(rows)
+    logger.info("JSON化開始: list_author_rules")
+    result = rows_to_dicts(rows)
+    logger.info("JSON化終了: list_author_rules")
+    return result
 
 
 @app.post("/author-rules")
@@ -535,9 +571,14 @@ def list_keyword_rules(rule_type: Optional[str] = None) -> list[dict]:
     )
 
     with get_connection() as conn:
+        logger.info("DBクエリ開始: list_keyword_rules")
         rows = conn.execute(query, params).fetchall()
+        logger.info("DBクエリ終了: list_keyword_rules")
 
-    return rows_to_dicts(rows)
+    logger.info("JSON化開始: list_keyword_rules")
+    result = rows_to_dicts(rows)
+    logger.info("JSON化終了: list_keyword_rules")
+    return result
 
 
 @app.post("/keyword-rules")
