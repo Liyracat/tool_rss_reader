@@ -213,7 +213,7 @@ def release_lock() -> None:
         LOCK_FILE.unlink()
 
 
-def main() -> int:
+def run_fetch(interval_minutes: int | None = None) -> int:
     logger = setup_logger()
     if not acquire_lock():
         logger.info("lock exists, exiting")
@@ -223,9 +223,16 @@ def main() -> int:
         init_db()
         has_error = False
         with get_connection() as conn:
-            sources = conn.execute(
-                "SELECT id, feed_url, creator_tag FROM sources WHERE is_enabled = 1"
-            ).fetchall()
+            if interval_minutes is None:
+                sources = conn.execute(
+                    "SELECT id, feed_url, creator_tag FROM sources WHERE is_enabled = 1"
+                ).fetchall()
+            else:
+                sources = conn.execute(
+                    "SELECT id, feed_url, creator_tag FROM sources "
+                    "WHERE is_enabled = 1 AND fetch_interval_min = ?",
+                    (interval_minutes,),
+                ).fetchall()
             for row in sources:
                 if not process_source(conn, logger, dict(row)):
                     has_error = True
@@ -258,6 +265,10 @@ def main() -> int:
         return 1 if has_error else 0
     finally:
         release_lock()
+
+
+def main() -> int:
+    return run_fetch()
 
 
 if __name__ == "__main__":

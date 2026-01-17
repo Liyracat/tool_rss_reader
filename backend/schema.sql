@@ -13,7 +13,7 @@ CREATE TABLE IF NOT EXISTS sources (
   source_type        TEXT    NOT NULL,
   creator_tag        TEXT    NOT NULL DEFAULT 'note:creatorName',
   is_enabled         INTEGER NOT NULL DEFAULT 1,
-  fetch_interval_min INTEGER NOT NULL DEFAULT 120,
+  fetch_interval_min INTEGER NOT NULL DEFAULT 180,
   last_fetched_at    TEXT,
   created_at         TEXT    NOT NULL DEFAULT (datetime('now')),
   updated_at         TEXT    NOT NULL DEFAULT (datetime('now')),
