@@ -70,13 +70,15 @@ def extract_note_metrics(html: str) -> dict[str, int]:
 
     h2_count = len(body.select("h2"))
     h3_count = len(body.select("h3"))
-    img_count = len(body.select("figure > a > img"))
+    figure_count = len(body.select("figure"))
     iframe_count = len(body.select("figure > div > div > iframe"))
 
     p_elements = [p for p in body.select("p") if not has_ancestor(p, {"ul", "ol", "blockquote"})]
     blockquote_p = body.select("figure > blockquote > p")
     ul_items = body.select("ul > li")
     ol_items = body.select("ol > li")
+
+    img_count = figure_count - iframe_count - len(blockquote_p)
 
     total_character_count = sum(count_allowed_text(p, {"p", "s", "a"}) for p in p_elements)
     total_character_count += sum(count_allowed_text(li, {"li", "s", "a"}) for li in ul_items)

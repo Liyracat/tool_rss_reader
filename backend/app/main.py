@@ -23,7 +23,7 @@ class SourceIn(BaseModel):
     source_type: SourceType
     creator_tag: str = "note:creatorName"
     is_enabled: bool = True
-    fetch_interval_min: int = 120
+    fetch_interval_min: int = 180
 
 
 class SourceOut(SourceIn):
@@ -107,7 +107,7 @@ def list_unread_items(
     keyword_id: Optional[int] = None,
     keyword: Optional[str] = None,
     q: Optional[str] = None,
-    limit: Optional[int] = None,
+    limit: int = 50,
     offset: int = 0,
     sort: str = "published_desc",
 ) -> dict:
@@ -164,9 +164,9 @@ def list_unread_items(
         f"WHERE {where_clause} "
         f"ORDER BY {order_by}"
     )
-    if limit is not None:
-        query += " LIMIT ? OFFSET ?"
-        params.extend([limit, offset])
+    count_params = list(params)
+    query += " LIMIT ? OFFSET ?"
+    params.extend([limit, offset])
 
     with get_connection() as conn:
         logger.info("DBクエリ開始: list_unread_items")
@@ -187,13 +187,15 @@ def list_unread_items(
             ignored_params,
         )
         conn.commit()
+        count_query = f"SELECT COUNT(*) FROM items i WHERE {where_clause}"
+        total = conn.execute(count_query, count_params).fetchone()[0]
         rows = conn.execute(query, params).fetchall()
         logger.info("DBクエリ終了: list_unread_items")
 
     logger.info("JSON化開始: list_unread_items")
     items = rows_to_dicts(rows)
     logger.info("JSON化終了: list_unread_items")
-    return {"items": items}
+    return {"items": items, "total": total}
 
 
 @app.get("/items/unread/tabs", response_model=dict)
@@ -329,17 +331,20 @@ def list_saved_items(
         f"WHERE {where_clause} "
         f"ORDER BY {order_by} LIMIT ? OFFSET ?"
     )
+    count_query = f"SELECT COUNT(*) FROM items i {join_tags} WHERE {where_clause}"
+    count_params = list(params)
     params.extend([limit, offset])
 
     with get_connection() as conn:
         logger.info("DBクエリ開始: list_saved_items")
+        total = conn.execute(count_query, count_params).fetchone()[0]
         rows = conn.execute(query, params).fetchall()
         logger.info("DBクエリ終了: list_saved_items")
 
     logger.info("JSON化開始: list_saved_items")
     items = rows_to_dicts(rows)
     logger.info("JSON化終了: list_saved_items")
-    return {"items": items}
+    return {"items": items, "total": total}
 
 
 @app.get("/items/{item_id}")
