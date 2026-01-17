@@ -140,13 +140,25 @@ export default function SavedPage() {
       </span> |{" "}
       <span className={item.total_character_count < 500 && item.total_character_count != null ? "metric-alert" : undefined}>
         合計: {formatCount(item.total_character_count)}
-      </span> | h2: {formatCount(item.h2_count)} | h3:{" "}
-      {formatCount(item.h3_count)} | img: {formatCount(item.img_count)} | link:{" "}
-      {formatCount(item.link_count)} | p: {formatCount(item.p_count)} |{" "}
+      </span> |{" "}
+      <span className={item.h2_count <= 1 && item.h3_count <= 1 && item.total_character_count > 1000 ? "metric-alert" : undefined}>
+        h2: {formatCount(item.h2_count)}
+      </span> |{" "}
+      <span className={item.h2_count <= 1 && item.h3_count <= 1 && item.total_character_count > 1000 ? "metric-alert" : undefined}>
+      h3: {formatCount(item.h3_count)}
+      </span> |{" "}
+      img: {formatCount(item.img_count)} |{" "}
+      link: {formatCount(item.link_count)} |{" "}
+      p: {formatCount(item.p_count)} |{" "}
       <span className={item.br_in_p_count === 0 ? "metric-alert" : undefined}>
         br: {formatCount(item.br_in_p_count)}
-      </span>{" "}
-      | 文字数/改行: {formatRatio(item)} | 句点: {formatCount(item.period_count)}
+      </span> |{" "}
+      <span className={formatRatio(item) > 50 || formatRatio(item) < 10 ? "metric-alert" : undefined}>
+        文字数/改行: {formatRatio(item)}
+      </span> |{" "}
+      <span className={item.period_count > (item.p_count + item.br_in_p_count) ? "metric-alert" : undefined}>
+        句点: {formatCount(item.period_count)}
+      </span>
     </div>
   );
 
