@@ -123,7 +123,20 @@ def process_item_metrics(conn, item_id: int, link: str) -> dict[str, int]:
     try:
         html = fetch_html(link)
         metrics = extract_note_metrics(html)
-    except Exception:
+    except Exception as exc:
+        if isinstance(exc, ValueError) and str(exc) == "note.com article body not found":
+            conn.execute(
+                """
+                UPDATE items
+                SET metrics_status = 'done',
+                    metrics_fetched_at = ?,
+                    has_purechase_cta = 1
+                WHERE id = ?
+                """,
+                (fetched_at, item_id),
+            )
+            conn.commit()
+            return {"has_purechase_cta": 1}
         conn.execute(
             "UPDATE items SET metrics_status = 'failed', metrics_fetched_at = ? WHERE id = ?",
             (fetched_at, item_id),
