@@ -3,6 +3,7 @@ import { api, buildQuery } from "../api.js";
 import TagModal from "../components/TagModal.jsx";
 
 const PAGE_SIZE = 50;
+const NOTE_DOMAIN_PREFIX = "https://note.com/";
 
 function formatDate(value, fallback) {
   if (!value && !fallback) return "-";
@@ -15,6 +16,17 @@ function formatDate(value, fallback) {
     dateStyle: "short",
     timeStyle: "medium"
   }).format(date);
+}
+
+function formatCta(value) {
+  if (value === 1) return "○";
+  if (value === 0) return "×";
+  return "-";
+}
+
+function formatCount(value) {
+  if (value === null || value === undefined) return "-";
+  return value;
 }
 
 export default function SavedPage() {
@@ -32,6 +44,7 @@ export default function SavedPage() {
   const [tags, setTags] = useState([]);
   const [editItem, setEditItem] = useState(null);
   const [page, setPage] = useState(1);
+  const [metricsLoadingId, setMetricsLoadingId] = useState(null);
 
   const queryParams = useMemo(() => {
     return buildQuery({
@@ -91,6 +104,26 @@ export default function SavedPage() {
     }
     loadItems();
   };
+
+  const handleFetchMetrics = async (item) => {
+    setMetricsLoadingId(item.id);
+    try {
+      await api.fetchItemMetrics(item.id);
+      loadItems();
+    } finally {
+      setMetricsLoadingId(null);
+    }
+  };
+
+  const renderMetrics = (item) => (
+    <div className="card-metrics">
+      課: {formatCta(item.has_purechase_cta)} | 合計: {formatCount(item.total_character_count)} | h2:{" "}
+      {formatCount(item.h2_count)} | h3: {formatCount(item.h3_count)} | img:{" "}
+      {formatCount(item.img_count)} | link: {formatCount(item.link_count)} | p:{" "}
+      {formatCount(item.p_count)} | br: {formatCount(item.br_in_p_count)} | 句点:{" "}
+      {formatCount(item.period_count)}
+    </div>
+  );
 
   return (
     <section className="page">
@@ -180,18 +213,33 @@ export default function SavedPage() {
             <div className="card-meta">
               <span className="chip">{item.site_name}</span>
               <span>{formatDate(item.published_at, item.published_date)}</span>
+              <span>{item.creator_name || "-"}</span>
             </div>
             <h3 className="card-title">{item.title}</h3>
             <a href={item.link} target="_blank" rel="noreferrer" className="card-link">
               {item.link}
             </a>
+            {renderMetrics(item)}
             <div className="card-actions">
-              <button className="primary" type="button" onClick={() => setEditItem(item)}>
-                編集
-              </button>
-              <button type="button" onClick={() => handleToggleStatus(item)}>
-                {item.status === "saved" ? "削除" : "保存"}
-              </button>
+              <div className="card-actions-left">
+                <button className="primary" type="button" onClick={() => setEditItem(item)}>
+                  編集
+                </button>
+                <button type="button" onClick={() => handleToggleStatus(item)}>
+                  {item.status === "saved" ? "削除" : "保存"}
+                </button>
+              </div>
+              <div className="card-actions-right">
+                {item.link.startsWith(NOTE_DOMAIN_PREFIX) && (
+                  <button
+                    type="button"
+                    onClick={() => handleFetchMetrics(item)}
+                    disabled={metricsLoadingId === item.id}
+                  >
+                    {metricsLoadingId === item.id ? "取得中..." : "情報取得"}
+                  </button>
+                )}
+              </div>
             </div>
           </article>
         ))}

@@ -153,6 +153,14 @@ body {
 
 .card-actions-right {
   margin-left: auto;
+  display: flex;
+  gap: 8px;
+}
+
+.card-metrics {
+  margin-top: 8px;
+  font-size: 12px;
+  color: #4b5563;
 }
 
 button {

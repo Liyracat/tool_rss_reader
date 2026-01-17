@@ -26,6 +26,7 @@ export const api = {
   getUnreadTabs: () => request("/items/unread/tabs"),
   saveItem: (id, tags) => request(`/items/${id}/save`, { method: "POST", body: JSON.stringify({ tags }) }),
   ignoreItem: (id) => request(`/items/${id}/ignore`, { method: "POST" }),
+  fetchItemMetrics: (id) => request(`/items/${id}/metrics`, { method: "POST" }),
   getSavedItems: (params) => request(`/items/saved${params}`),
   updateItemTags: (id, tags) => request(`/items/${id}/tags`, { method: "PUT", body: JSON.stringify({ tags }) }),
   unsaveItem: (id) => request(`/items/${id}/unsave`, { method: "POST" }),

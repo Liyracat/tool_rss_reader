@@ -4,6 +4,7 @@ import TagModal from "../components/TagModal.jsx";
 
 const tabsInitial = { all_count: 0, other_count: 0, keyword_tabs: [] };
 const PAGE_SIZE = 50;
+const NOTE_DOMAIN_PREFIX = "https://note.com/";
 
 function formatDate(value, fallback) {
   if (!value && !fallback) return "-";
@@ -18,6 +19,17 @@ function formatDate(value, fallback) {
   }).format(date);
 }
 
+function formatCta(value) {
+  if (value === 1) return "○";
+  if (value === 0) return "×";
+  return "-";
+}
+
+function formatCount(value) {
+  if (value === null || value === undefined) return "-";
+  return value;
+}
+
 export default function UnreadPage() {
   const [tabs, setTabs] = useState(tabsInitial);
   const [items, setItems] = useState([]);
@@ -26,6 +38,7 @@ export default function UnreadPage() {
   const [sortOrder, setSortOrder] = useState("desc");
   const [modalItem, setModalItem] = useState(null);
   const [page, setPage] = useState(1);
+  const [metricsLoadingId, setMetricsLoadingId] = useState(null);
 
   const queryParams = useMemo(() => {
     const params = {
@@ -111,6 +124,26 @@ export default function UnreadPage() {
     await handleIgnore(item.id);
   };
 
+  const handleFetchMetrics = async (item) => {
+    setMetricsLoadingId(item.id);
+    try {
+      await api.fetchItemMetrics(item.id);
+      loadItems();
+    } finally {
+      setMetricsLoadingId(null);
+    }
+  };
+
+  const renderMetrics = (item) => (
+    <div className="card-metrics">
+      課: {formatCta(item.has_purechase_cta)} | 合計: {formatCount(item.total_character_count)} | h2:{" "}
+      {formatCount(item.h2_count)} | h3: {formatCount(item.h3_count)} | img:{" "}
+      {formatCount(item.img_count)} | link: {formatCount(item.link_count)} | p:{" "}
+      {formatCount(item.p_count)} | br: {formatCount(item.br_in_p_count)} | 句点:{" "}
+      {formatCount(item.period_count)}
+    </div>
+  );
+
   return (
     <section className="page">
       <div className="page-header">
@@ -165,11 +198,13 @@ export default function UnreadPage() {
             <div className="card-meta">
               <span className="chip">{item.site_name}</span>
               <span>{formatDate(item.published_at, item.published_date)}</span>
+              <span>{item.creator_name || "-"}</span>
             </div>
             <h3 className="card-title">{item.title}</h3>
             <a href={item.link} target="_blank" rel="noreferrer" className="card-link">
               {item.link}
             </a>
+            {renderMetrics(item)}
             <div className="card-actions">
               <div className="card-actions-left">
                 <button className="primary" type="button" onClick={() => setModalItem(item)}>
@@ -179,15 +214,22 @@ export default function UnreadPage() {
                   削除
                 </button>
               </div>
-              {item.creator_name && (
-                <button
-                  className="card-actions-right"
-                  type="button"
-                  onClick={() => handleBlock(item)}
-                >
-                  block
-                </button>
-              )}
+              <div className="card-actions-right">
+                {item.link.startsWith(NOTE_DOMAIN_PREFIX) && (
+                  <button
+                    type="button"
+                    onClick={() => handleFetchMetrics(item)}
+                    disabled={metricsLoadingId === item.id}
+                  >
+                    {metricsLoadingId === item.id ? "取得中..." : "情報取得"}
+                  </button>
+                )}
+                {item.creator_name && (
+                  <button type="button" onClick={() => handleBlock(item)}>
+                    block
+                  </button>
+                )}
+              </div>
             </div>
           </article>
         ))}
