@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { api, buildQuery } from "../api.js";
 import TagModal from "../components/TagModal.jsx";
 
+const PAGE_SIZE = 50;
+
 function formatDate(value, fallback) {
   if (!value && !fallback) return "-";
   const raw = value || fallback;
@@ -29,6 +31,7 @@ export default function SavedPage() {
   const [sources, setSources] = useState([]);
   const [tags, setTags] = useState([]);
   const [editItem, setEditItem] = useState(null);
+  const [page, setPage] = useState(1);
 
   const queryParams = useMemo(() => {
     return buildQuery({
@@ -60,6 +63,19 @@ export default function SavedPage() {
   useEffect(() => {
     loadItems();
   }, [queryParams]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [queryParams]);
+
+  const totalPages = Math.max(1, Math.ceil(items.length / PAGE_SIZE));
+  const pagedItems = items.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+
+  useEffect(() => {
+    if (page > totalPages) {
+      setPage(totalPages);
+    }
+  }, [page, totalPages]);
 
   const handleEdit = async (tagsValue) => {
     if (!editItem) return;
@@ -159,7 +175,7 @@ export default function SavedPage() {
       </div>
 
       <div className="list">
-        {items.map((item) => (
+        {pagedItems.map((item) => (
           <article key={item.id} className="card">
             <div className="card-meta">
               <span className="chip">{item.site_name}</span>
@@ -180,6 +196,26 @@ export default function SavedPage() {
           </article>
         ))}
         {items.length === 0 && <p className="empty">保存記事がありません。</p>}
+      </div>
+
+      <div className="pager">
+        <button
+          type="button"
+          onClick={() => setPage((current) => Math.max(1, current - 1))}
+          disabled={page === 1}
+        >
+          前へ
+        </button>
+        <span>
+          {page} / {totalPages} (全{items.length}件)
+        </span>
+        <button
+          type="button"
+          onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
+          disabled={page === totalPages}
+        >
+          次へ
+        </button>
       </div>
 
       {editItem && (

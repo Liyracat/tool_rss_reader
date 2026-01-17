@@ -3,6 +3,7 @@ import { api, buildQuery } from "../api.js";
 import TagModal from "../components/TagModal.jsx";
 
 const tabsInitial = { all_count: 0, other_count: 0, keyword_tabs: [] };
+const PAGE_SIZE = 50;
 
 function formatDate(value, fallback) {
   if (!value && !fallback) return "-";
@@ -24,6 +25,7 @@ export default function UnreadPage() {
   const [search, setSearch] = useState("");
   const [sortOrder, setSortOrder] = useState("desc");
   const [modalItem, setModalItem] = useState(null);
+  const [page, setPage] = useState(1);
 
   const queryParams = useMemo(() => {
     const params = {
@@ -54,6 +56,10 @@ export default function UnreadPage() {
     loadItems();
   }, [queryParams]);
 
+  useEffect(() => {
+    setPage(1);
+  }, [queryParams]);
+
   const sortedItems = useMemo(() => {
     const getTimestamp = (item) => {
       const raw = item.published_at || item.published_date;
@@ -67,6 +73,15 @@ export default function UnreadPage() {
       return sortOrder === "asc" ? diff : -diff;
     });
   }, [items, sortOrder]);
+
+  const totalPages = Math.max(1, Math.ceil(sortedItems.length / PAGE_SIZE));
+  const pagedItems = sortedItems.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+
+  useEffect(() => {
+    if (page > totalPages) {
+      setPage(totalPages);
+    }
+  }, [page, totalPages]);
 
   const handleSave = async (tags) => {
     if (!modalItem) return;
@@ -145,7 +160,7 @@ export default function UnreadPage() {
       </div>
 
       <div className="list">
-        {sortedItems.map((item) => (
+        {pagedItems.map((item) => (
           <article key={item.id} className="card">
             <div className="card-meta">
               <span className="chip">{item.site_name}</span>
@@ -177,6 +192,26 @@ export default function UnreadPage() {
           </article>
         ))}
         {items.length === 0 && <p className="empty">未評価の記事がありません。</p>}
+      </div>
+
+      <div className="pager">
+        <button
+          type="button"
+          onClick={() => setPage((current) => Math.max(1, current - 1))}
+          disabled={page === 1}
+        >
+          前へ
+        </button>
+        <span>
+          {page} / {totalPages} (全{sortedItems.length}件)
+        </span>
+        <button
+          type="button"
+          onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
+          disabled={page === totalPages}
+        >
+          次へ
+        </button>
       </div>
 
       {modalItem && (
