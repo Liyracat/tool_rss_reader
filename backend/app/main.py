@@ -9,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, HttpUrl
 
 from .db import get_connection, init_db, rows_to_dicts
+from .metrics import process_item_metrics
 
 SourceType = Literal["search", "tag", "user", "magazine"]
 ItemStatus = Literal["unread", "saved", "ignored"]
@@ -41,6 +42,17 @@ class ItemOut(BaseModel):
     published_at: Optional[str] = None
     published_date: Optional[str] = None
     status: ItemStatus
+    metrics_status: Optional[str] = None
+    metrics_fetched_at: Optional[str] = None
+    has_purechase_cta: Optional[int] = None
+    total_character_count: Optional[int] = None
+    h2_count: Optional[int] = None
+    h3_count: Optional[int] = None
+    img_count: Optional[int] = None
+    link_count: Optional[int] = None
+    p_count: Optional[int] = None
+    br_in_p_count: Optional[int] = None
+    period_count: Optional[int] = None
 
 
 class TagsIn(BaseModel):
@@ -74,7 +86,7 @@ logger = logging.getLogger(__name__)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=["http://localhost:5175"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"]
@@ -144,7 +156,10 @@ def list_unread_items(
     where_clause = " AND ".join(where)
     query = (
         "SELECT i.id, i.source_id, s.site_name, i.title, i.link, i.creator_name, "
-        "i.published_at, i.published_date, i.status "
+        "i.published_at, i.published_date, i.status, i.metrics_status, "
+        "i.metrics_fetched_at, i.has_purechase_cta, i.total_character_count, "
+        "i.h2_count, i.h3_count, i.img_count, i.link_count, i.p_count, "
+        "i.br_in_p_count, i.period_count "
         "FROM items i JOIN sources s ON s.id = i.source_id "
         f"WHERE {where_clause} "
         f"ORDER BY {order_by}"
@@ -220,7 +235,10 @@ def save_item(item_id: int, payload: TagsIn) -> ItemOut:
         update_item_tags(conn, item_id, payload.tags)
         row = conn.execute(
             "SELECT i.id, i.source_id, s.site_name, i.title, i.link, i.creator_name, "
-            "i.published_at, i.published_date, i.status "
+            "i.published_at, i.published_date, i.status, i.metrics_status, "
+            "i.metrics_fetched_at, i.has_purechase_cta, i.total_character_count, "
+            "i.h2_count, i.h3_count, i.img_count, i.link_count, i.p_count, "
+            "i.br_in_p_count, i.period_count "
             "FROM items i JOIN sources s ON s.id = i.source_id WHERE i.id = ?",
             (item_id,),
         ).fetchone()
@@ -302,7 +320,10 @@ def list_saved_items(
     where_clause = " AND ".join(where)
     query = (
         "SELECT i.id, i.source_id, s.site_name, i.title, i.link, i.creator_name, "
-        "i.published_at, i.published_date, i.status "
+        "i.published_at, i.published_date, i.status, i.metrics_status, "
+        "i.metrics_fetched_at, i.has_purechase_cta, i.total_character_count, "
+        "i.h2_count, i.h3_count, i.img_count, i.link_count, i.p_count, "
+        "i.br_in_p_count, i.period_count "
         "FROM items i JOIN sources s ON s.id = i.source_id "
         f"{join_tags} "
         f"WHERE {where_clause} "
@@ -342,6 +363,25 @@ def get_item(item_id: int) -> dict:
     item["tags"] = [tag[0] for tag in tags]
     logger.info("JSON化終了: get_item")
     return item
+
+
+@app.post("/items/{item_id}/metrics")
+def fetch_item_metrics(item_id: int) -> dict:
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT id, link FROM items WHERE id = ?",
+            (item_id,),
+        ).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="item not found")
+        try:
+            metrics = process_item_metrics(conn, row["id"], row["link"])
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        except Exception as exc:
+            logger.exception("failed to fetch metrics item_id=%s", item_id)
+            raise HTTPException(status_code=500, detail="failed to fetch metrics") from exc
+    return {"status": "done", "metrics": metrics}
 
 
 @app.put("/items/{item_id}/tags")
