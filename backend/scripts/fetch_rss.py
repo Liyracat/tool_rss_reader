@@ -245,6 +245,16 @@ def main() -> int:
                 except Exception:
                     logger.exception("failed metrics item_id=%s", item["id"])
                 time.sleep(5)
+            deleted = conn.execute(
+                """
+                DELETE FROM items
+                WHERE status = 'ignored'
+                  AND updated_at <= datetime('now', '-24 hours')
+                """
+            ).rowcount
+            if deleted:
+                logger.info("deleted ignored items count=%s", deleted)
+            conn.commit()
         return 1 if has_error else 0
     finally:
         release_lock()
