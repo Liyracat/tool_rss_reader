@@ -39,12 +39,24 @@ CREATE TABLE IF NOT EXISTS items (
   published_date   TEXT,
   fetched_at       TEXT    NOT NULL DEFAULT (datetime('now')),
   status           TEXT    NOT NULL DEFAULT 'unread',
+  metrics_status   TEXT    NOT NULL DEFAULT 'pending',
+  metrics_fetched_at TEXT,
+  has_purechase_cta INTEGER,
+  total_character_count INTEGER,
+  h2_count         INTEGER,
+  h3_count         INTEGER,
+  img_count        INTEGER,
+  link_count       INTEGER,
+  p_count          INTEGER,
+  br_in_p_count    INTEGER,
+  period_count     INTEGER,
   raw_xml          TEXT,
   fingerprint      TEXT    NOT NULL UNIQUE,
   created_at       TEXT    NOT NULL DEFAULT (datetime('now')),
   updated_at       TEXT    NOT NULL DEFAULT (datetime('now')),
   FOREIGN KEY (source_id) REFERENCES sources(id) ON DELETE CASCADE,
-  CHECK (status IN ('unread','saved','ignored'))
+  CHECK (status IN ('unread','saved','ignored')),
+  CHECK (metrics_status IN ('pending','done','failed'))
 );
 
 CREATE INDEX IF NOT EXISTS idx_items_source_status

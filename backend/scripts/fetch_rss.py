@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import sys
+import time
 from contextlib import suppress
 from datetime import datetime, timezone
 from pathlib import Path
@@ -18,6 +19,7 @@ BASE_DIR = SCRIPT_DIR.parent
 sys.path.append(str(BASE_DIR))
 
 from app.db import get_connection, init_db  # noqa: E402
+from app.metrics import NOTE_DOMAIN_PREFIX, process_item_metrics  # noqa: E402
 
 LOG_DIR = BASE_DIR / "logs"
 LOG_FILE = LOG_DIR / "fetch.log"
@@ -227,6 +229,22 @@ def main() -> int:
             for row in sources:
                 if not process_source(conn, logger, dict(row)):
                     has_error = True
+            pending_items = conn.execute(
+                """
+                SELECT id, link FROM items
+                WHERE metrics_status = 'pending'
+                AND link LIKE ?
+                ORDER BY COALESCE(published_at, published_date) DESC
+                LIMIT 10
+                """,
+                (f"{NOTE_DOMAIN_PREFIX}%",),
+            ).fetchall()
+            for item in pending_items:
+                try:
+                    process_item_metrics(conn, item["id"], item["link"])
+                except Exception:
+                    logger.exception("failed metrics item_id=%s", item["id"])
+                time.sleep(5)
         return 1 if has_error else 0
     finally:
         release_lock()
