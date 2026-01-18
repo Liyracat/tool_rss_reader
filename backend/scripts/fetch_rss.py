@@ -19,7 +19,7 @@ BASE_DIR = SCRIPT_DIR.parent
 sys.path.append(str(BASE_DIR))
 
 from app.db import get_connection, init_db  # noqa: E402
-from app.metrics import NOTE_DOMAIN_PREFIX, process_item_metrics  # noqa: E402
+from app.metrics import NOTE_DOMAIN_PREFIX, process_item_metrics, should_auto_block_item  # noqa: E402
 
 LOG_DIR = BASE_DIR / "logs"
 LOG_FILE = LOG_DIR / "fetch.log"
@@ -208,6 +208,40 @@ def acquire_lock() -> bool:
     return True
 
 
+def apply_auto_block(conn, logger: logging.Logger, item_id: int) -> None:
+    metrics_row = conn.execute(
+        """
+        SELECT source_id, creator_name, total_character_count, h2_count, h3_count,
+               p_count, br_in_p_count, period_count
+        FROM items WHERE id = ?
+        """,
+        (item_id,),
+    ).fetchone()
+    if not metrics_row or not metrics_row["creator_name"]:
+        return
+    if not should_auto_block_item(dict(metrics_row)):
+        return
+    try:
+        conn.execute(
+            """
+            INSERT INTO author_rules (source_id, creator_name, rule_type)
+            VALUES (?, ?, 'block')
+            """,
+            (metrics_row["source_id"], metrics_row["creator_name"]),
+        )
+    except Exception as exc:
+        if "UNIQUE" not in str(exc):
+            raise
+    conn.execute("UPDATE items SET status = 'ignored' WHERE id = ?", (item_id,))
+    conn.commit()
+    logger.info(
+        "auto-blocked item_id=%s source_id=%s creator=%s",
+        item_id,
+        metrics_row["source_id"],
+        metrics_row["creator_name"],
+    )
+
+
 def release_lock() -> None:
     with suppress(FileNotFoundError):
         LOCK_FILE.unlink()
@@ -250,6 +284,7 @@ def run_fetch(interval_minutes: int | None = None) -> int:
                 try:
                     logger.info("start item_metrics items id=%s", item["id"])
                     process_item_metrics(conn, item["id"], item["link"])
+                    apply_auto_block(conn, logger, item["id"])
                 except Exception:
                     logger.exception("failed metrics item_id=%s", item["id"])
                 time.sleep(5)
