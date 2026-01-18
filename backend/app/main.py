@@ -100,6 +100,62 @@ def startup() -> None:
     init_db()
 
 
+def should_auto_block_item(item: dict) -> bool:
+    total = item.get("total_character_count")
+    h2_count = item.get("h2_count")
+    h3_count = item.get("h3_count")
+    p_count = item.get("p_count")
+    br_in_p_count = item.get("br_in_p_count")
+    period_count = item.get("period_count")
+
+    too_short = total is not None and total < 200
+
+    h2_ratio_alert = (
+        total is not None
+        and total > 500
+        and h2_count not in (None, 0)
+        and total / h2_count < 200
+    )
+    h3_ratio_alert = (
+        total is not None
+        and total > 500
+        and h3_count not in (None, 0)
+        and total / h3_count < 120
+    )
+
+    br_ratio_alert = (
+        p_count is not None
+        and br_in_p_count is not None
+        and br_in_p_count < p_count * 0.7
+    )
+
+    paragraph_count = None
+    if p_count is not None and br_in_p_count is not None:
+        paragraph_count = p_count + br_in_p_count
+
+    density_alert = False
+    if total is not None and paragraph_count and paragraph_count > 0:
+        density = total / paragraph_count
+        density_alert = density < 10 or density > 50
+
+    period_alert = (
+        period_count is not None
+        and paragraph_count is not None
+        and period_count > paragraph_count
+    )
+
+    return any(
+        [
+            too_short,
+            h2_ratio_alert,
+            h3_ratio_alert,
+            br_ratio_alert,
+            density_alert,
+            period_alert,
+        ]
+    )
+
+
 @app.get("/items/unread", response_model=dict)
 def list_unread_items(
     source_id: Optional[int] = None,
@@ -386,6 +442,29 @@ def fetch_item_metrics(item_id: int) -> dict:
         except Exception as exc:
             logger.exception("failed to fetch metrics item_id=%s", item_id)
             raise HTTPException(status_code=500, detail="failed to fetch metrics") from exc
+        metrics_row = conn.execute(
+            """
+            SELECT source_id, creator_name, total_character_count, h2_count, h3_count,
+                   p_count, br_in_p_count, period_count
+            FROM items WHERE id = ?
+            """,
+            (item_id,),
+        ).fetchone()
+        if metrics_row and metrics_row["creator_name"] and should_auto_block_item(dict(metrics_row)):
+            logger.info("metrics block id=%s  creator_name=%s", item_id, metrics_row["creator_name"])
+            try:
+                conn.execute(
+                    """
+                    INSERT INTO author_rules (source_id, creator_name, rule_type)
+                    VALUES (?, ?, 'block')
+                    """,
+                    (metrics_row["source_id"], metrics_row["creator_name"]),
+                )
+            except Exception as exc:
+                if "UNIQUE" not in str(exc):
+                    raise
+            conn.execute("UPDATE items SET status = 'ignored' WHERE id = ?", (item_id,))
+            conn.commit()
     return {"status": "done", "metrics": metrics}
 
 
