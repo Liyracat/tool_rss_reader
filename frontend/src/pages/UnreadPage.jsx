@@ -144,19 +144,19 @@ export default function UnreadPage() {
       <span className={item.has_purechase_cta === 1 ? "metric-alert" : undefined}>
         課: {formatCta(item.has_purechase_cta)}
       </span> |{" "}
-      <span className={item.total_character_count < 500 && item.total_character_count != null ? "metric-alert" : undefined}>
+      <span className={item.total_character_count < 200 && item.total_character_count != null ? "metric-alert" : undefined}>
         合計: {formatCount(item.total_character_count)}
       </span> |{" "}
-      <span className={item.h2_count <= 1 && item.h3_count <= 1 && item.total_character_count > 1000 ? "metric-alert" : undefined}>
+      <span className={item.h2_count != 0 && item.total_character_count / item.h2_count < 200 && item.total_character_count > 500 ? "metric-alert" : undefined}>
         h2: {formatCount(item.h2_count)}
       </span> |{" "}
-      <span className={item.h2_count <= 1 && item.h3_count <= 1 && item.total_character_count > 1000 ? "metric-alert" : undefined}>
+      <span className={item.h3_count != 0 && item.total_character_count / item.h3_count < 120 && item.total_character_count > 500 ? "metric-alert" : undefined}>
       h3: {formatCount(item.h3_count)}
       </span> |{" "}
       img: {formatCount(item.img_count)} |{" "}
       link: {formatCount(item.link_count)} |{" "}
       p: {formatCount(item.p_count)} |{" "}
-      <span className={item.br_in_p_count === 0 ? "metric-alert" : undefined}>
+      <span className={item.br_in_p_count < item.p_count * 0.7 ? "metric-alert" : undefined}>
         br: {formatCount(item.br_in_p_count)}
       </span> |{" "}
       <span className={formatRatio(item) > 50 || formatRatio(item) < 10 ? "metric-alert" : undefined}>
