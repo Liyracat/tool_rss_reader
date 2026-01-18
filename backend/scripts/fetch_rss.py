@@ -248,6 +248,7 @@ def run_fetch(interval_minutes: int | None = None) -> int:
             ).fetchall()
             for item in pending_items:
                 try:
+                    logger.info("start item_metrics items id=%s", item["id"])
                     process_item_metrics(conn, item["id"], item["link"])
                 except Exception:
                     logger.exception("failed metrics item_id=%s", item["id"])
@@ -256,7 +257,7 @@ def run_fetch(interval_minutes: int | None = None) -> int:
                 """
                 DELETE FROM items
                 WHERE status = 'ignored'
-                  AND updated_at <= datetime('now', '-24 hours')
+                  AND updated_at <= datetime('now', '-12 hours')
                 """
             ).rowcount
             if deleted:
