@@ -178,3 +178,59 @@ def process_item_metrics(conn, item_id: int, link: str) -> dict[str, int]:
     )
     conn.commit()
     return metrics
+
+
+def should_auto_block_item(item: dict) -> bool:
+    total = item.get("total_character_count")
+    h2_count = item.get("h2_count")
+    h3_count = item.get("h3_count")
+    p_count = item.get("p_count")
+    br_in_p_count = item.get("br_in_p_count")
+    period_count = item.get("period_count")
+
+    too_short = total is not None and total < 200
+
+    h2_ratio_alert = (
+        total is not None
+        and total > 500
+        and h2_count not in (None, 0)
+        and total / h2_count < 200
+    )
+    h3_ratio_alert = (
+        total is not None
+        and total > 500
+        and h3_count not in (None, 0)
+        and total / h3_count < 120
+    )
+
+    br_ratio_alert = (
+        p_count is not None
+        and br_in_p_count is not None
+        and br_in_p_count < p_count * 0.7
+    )
+
+    paragraph_count = None
+    if p_count is not None and br_in_p_count is not None:
+        paragraph_count = p_count + br_in_p_count
+
+    density_alert = False
+    if total is not None and paragraph_count and paragraph_count > 0:
+        density = total / paragraph_count
+        density_alert = density < 10 or density > 50
+
+    period_alert = (
+        period_count is not None
+        and paragraph_count is not None
+        and period_count > paragraph_count
+    )
+
+    return any(
+        [
+            too_short,
+            h2_ratio_alert,
+            h3_ratio_alert,
+            br_ratio_alert,
+            density_alert,
+            period_alert,
+        ]
+    )

@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, HttpUrl
 
 from .db import get_connection, init_db, rows_to_dicts
-from .metrics import process_item_metrics
+from .metrics import process_item_metrics, should_auto_block_item
 
 SourceType = Literal["search", "tag", "user", "magazine"]
 ItemStatus = Literal["unread", "saved", "ignored"]
@@ -98,62 +98,6 @@ job_status = FetchJobStatus(last_run_at=None, last_run_sources=[], last_error=No
 @app.on_event("startup")
 def startup() -> None:
     init_db()
-
-
-def should_auto_block_item(item: dict) -> bool:
-    total = item.get("total_character_count")
-    h2_count = item.get("h2_count")
-    h3_count = item.get("h3_count")
-    p_count = item.get("p_count")
-    br_in_p_count = item.get("br_in_p_count")
-    period_count = item.get("period_count")
-
-    too_short = total is not None and total < 200
-
-    h2_ratio_alert = (
-        total is not None
-        and total > 500
-        and h2_count not in (None, 0)
-        and total / h2_count < 200
-    )
-    h3_ratio_alert = (
-        total is not None
-        and total > 500
-        and h3_count not in (None, 0)
-        and total / h3_count < 120
-    )
-
-    br_ratio_alert = (
-        p_count is not None
-        and br_in_p_count is not None
-        and br_in_p_count < p_count * 0.7
-    )
-
-    paragraph_count = None
-    if p_count is not None and br_in_p_count is not None:
-        paragraph_count = p_count + br_in_p_count
-
-    density_alert = False
-    if total is not None and paragraph_count and paragraph_count > 0:
-        density = total / paragraph_count
-        density_alert = density < 10 or density > 50
-
-    period_alert = (
-        period_count is not None
-        and paragraph_count is not None
-        and period_count > paragraph_count
-    )
-
-    return any(
-        [
-            too_short,
-            h2_ratio_alert,
-            h3_ratio_alert,
-            br_ratio_alert,
-            density_alert,
-            period_alert,
-        ]
-    )
 
 
 @app.get("/items/unread", response_model=dict)
@@ -451,7 +395,6 @@ def fetch_item_metrics(item_id: int) -> dict:
             (item_id,),
         ).fetchone()
         if metrics_row and metrics_row["creator_name"] and should_auto_block_item(dict(metrics_row)):
-            logger.info("metrics block id=%s  creator_name=%s", item_id, metrics_row["creator_name"])
             try:
                 conn.execute(
                     """
