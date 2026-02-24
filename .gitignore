@@ -1,0 +1,7 @@
+node_modules/
+backend/data/
+backend/logs/*.log
+__pycache__/
+.venv/
+.DS_Store
+package-lock.json
