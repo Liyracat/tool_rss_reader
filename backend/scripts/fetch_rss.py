@@ -284,7 +284,7 @@ def run_fetch(interval_minutes: int | None = None) -> int:
                 try:
                     logger.info("start item_metrics items id=%s", item["id"])
                     process_item_metrics(conn, item["id"], item["link"])
-                    apply_auto_block(conn, logger, item["id"])
+                    ## apply_auto_block(conn, logger, item["id"])
                 except Exception:
                     logger.exception("failed metrics item_id=%s", item["id"])
                 time.sleep(5)
