@@ -138,6 +138,22 @@ body {
   outline-offset: 2px;
 }
 
+.card {
+  background: #fff;
+  border-radius: 16px;
+  padding: 16px;
+  box-shadow: 0 8px 16px rgba(15, 23, 42, 0.08);
+}
+
+.card-clickable {
+  cursor: pointer;
+}
+
+.card-clickable:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 2px;
+}
+
 .card-meta {
   display: flex;
   align-items: center;
