@@ -106,7 +106,6 @@ body {
   gap: 16px;
 }
 
-<<<<<<< ours
 .card {
   background: #fff;
   border-radius: 16px;
@@ -123,7 +122,6 @@ body {
   outline-offset: 2px;
 }
 
-=======
 .card {
   background: #fff;
   border-radius: 16px;
@@ -140,7 +138,6 @@ body {
   outline-offset: 2px;
 }
 
->>>>>>> theirs
 .card-meta {
   display: flex;
   align-items: center;

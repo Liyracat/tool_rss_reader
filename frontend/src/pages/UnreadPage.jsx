@@ -129,7 +129,6 @@ export default function UnreadPage() {
     await handleIgnore(item.id);
   };
 
-<<<<<<< ours
   const handleFetchMetrics = async (item) => {
     setMetricsLoadingId(item.id);
     try {
@@ -152,7 +151,6 @@ export default function UnreadPage() {
   };
 
   const renderMetrics = (item) => (
-=======
   const handleFetchMetrics = async (item) => {
     setMetricsLoadingId(item.id);
     try {
@@ -175,7 +173,6 @@ export default function UnreadPage() {
   };
 
   const renderMetrics = (item) => (
->>>>>>> theirs
     <div className="card-metrics">
       <span className={item.has_purechase_cta === 1 ? "metric-alert" : undefined}>
         課: {formatCta(item.has_purechase_cta)}
@@ -253,7 +250,6 @@ export default function UnreadPage() {
       </div>
 
       <div className="list">
-<<<<<<< ours
         {items.map((item) => (
           <article
             key={item.id}
@@ -326,7 +322,6 @@ export default function UnreadPage() {
                   </button>
                 )}
               </div>
-=======
         {items.map((item) => (
           <article
             key={item.id}
@@ -399,7 +394,6 @@ export default function UnreadPage() {
                   </button>
                 )}
               </div>
->>>>>>> theirs
             </div>
           </article>
         ))}
