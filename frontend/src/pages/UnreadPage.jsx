@@ -139,6 +139,17 @@ export default function UnreadPage() {
     }
   };
 
+  const openItemLink = (link) => {
+    window.open(link, "_blank", "noopener,noreferrer");
+  };
+
+  const handleCardKeyDown = (event, link) => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      openItemLink(link);
+    }
+  };
+
   const renderMetrics = (item) => (
     <div className="card-metrics">
       <span className={item.has_purechase_cta === 1 ? "metric-alert" : undefined}>
@@ -218,23 +229,49 @@ export default function UnreadPage() {
 
       <div className="list">
         {items.map((item) => (
-          <article key={item.id} className="card">
+          <article
+            key={item.id}
+            className="card card-clickable"
+            role="link"
+            tabIndex={0}
+            onClick={() => openItemLink(item.link)}
+            onKeyDown={(event) => handleCardKeyDown(event, item.link)}
+          >
             <div className="card-meta">
               <span className="chip">{item.site_name}</span>
               <span>{formatDate(item.published_at, item.published_date)}</span>
               <span>{item.creator_name || "-"}</span>
             </div>
             <h3 className="card-title">{item.title}</h3>
-            <a href={item.link} target="_blank" rel="noreferrer" className="card-link">
+            <a
+              href={item.link}
+              target="_blank"
+              rel="noreferrer"
+              className="card-link"
+              onClick={(event) => event.stopPropagation()}
+            >
               {item.link}
             </a>
             {renderMetrics(item)}
             <div className="card-actions">
               <div className="card-actions-left">
-                <button className="primary" type="button" onClick={() => setModalItem(item)}>
+                <button
+                  className="primary"
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    setModalItem(item);
+                  }}
+                >
                   保存
                 </button>
-                <button type="button" onClick={() => handleIgnore(item.id)}>
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    handleIgnore(item.id);
+                  }}
+                >
                   削除
                 </button>
               </div>
@@ -242,14 +279,23 @@ export default function UnreadPage() {
                 {item.link.startsWith(NOTE_DOMAIN_PREFIX) && (
                   <button
                     type="button"
-                    onClick={() => handleFetchMetrics(item)}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      handleFetchMetrics(item);
+                    }}
                     disabled={metricsLoadingId === item.id}
                   >
                     {metricsLoadingId === item.id ? "取得中..." : "情報取得"}
                   </button>
                 )}
                 {item.creator_name && (
-                  <button type="button" onClick={() => handleBlock(item)}>
+                  <button
+                    type="button"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      handleBlock(item);
+                    }}
+                  >
                     block
                   </button>
                 )}
