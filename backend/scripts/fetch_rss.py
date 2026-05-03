@@ -178,6 +178,15 @@ def process_source(conn, logger: logging.Logger, source: dict) -> bool:
                 """,
                 (source_id, title, link, creator_name, published_at, published_date, fingerprint),
             )
+            item_row = conn.execute(
+                "SELECT id FROM items WHERE fingerprint = ?",
+                (fingerprint,),
+            ).fetchone()
+            if item_row:
+                conn.execute(
+                    "INSERT OR IGNORE INTO item_sources (item_id, source_id) VALUES (?, ?)",
+                    (item_row["id"], source_id),
+                )
             inserted += 1
         conn.execute(
             "UPDATE sources SET last_fetched_at = ? WHERE id = ?",

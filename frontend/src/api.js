@@ -42,7 +42,11 @@ export const api = {
   listKeywordRules: () => request("/keyword-rules"),
   createKeywordRule: (payload) => request("/keyword-rules", { method: "POST", body: JSON.stringify(payload) }),
   updateKeywordRule: (id, payload) => request(`/keyword-rules/${id}`, { method: "PUT", body: JSON.stringify(payload) }),
-  deleteKeywordRule: (id) => request(`/keyword-rules/${id}`, { method: "DELETE" })
+  deleteKeywordRule: (id) => request(`/keyword-rules/${id}`, { method: "DELETE" }),
+  listDisplayTabs: () => request("/display-tabs"),
+  createDisplayTab: (payload) => request("/display-tabs", { method: "POST", body: JSON.stringify(payload) }),
+  updateDisplayTab: (id, payload) => request(`/display-tabs/${id}`, { method: "PUT", body: JSON.stringify(payload) }),
+  deleteDisplayTab: (id) => request(`/display-tabs/${id}`, { method: "DELETE" })
 };
 
 export function buildQuery(params) {

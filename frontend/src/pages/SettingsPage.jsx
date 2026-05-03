@@ -15,6 +15,8 @@ const emptySource = {
   source_type: "search",
   creator_tag: "note:creatorName",
   is_enabled: true,
+  include_in_all: true,
+  tab_ids: [],
   fetch_interval_min: 180
 };
 
@@ -30,6 +32,10 @@ const emptyKeywordRule = {
   rule_type: "tab"
 };
 
+const emptyDisplayTab = {
+  name: ""
+};
+
 const sortByCreatedAtDesc = (items) =>
   [...items].sort((a, b) => {
     const timeA = Date.parse(a.created_at ?? "") || 0;
@@ -41,17 +47,21 @@ export default function SettingsPage() {
   const [sources, setSources] = useState([]);
   const [authorRules, setAuthorRules] = useState([]);
   const [keywordRules, setKeywordRules] = useState([]);
+  const [displayTabs, setDisplayTabs] = useState([]);
   const [sourceDraft, setSourceDraft] = useState(emptySource);
   const [authorDraft, setAuthorDraft] = useState(emptyAuthorRule);
   const [keywordDraft, setKeywordDraft] = useState(emptyKeywordRule);
+  const [displayTabDraft, setDisplayTabDraft] = useState(emptyDisplayTab);
   const [expandedSections, setExpandedSections] = useState({
     sources: false,
     authors: false,
-    keywords: false
+    keywords: false,
+    tabs: false
   });
   const [sourcePage, setSourcePage] = useState(1);
   const [authorPage, setAuthorPage] = useState(1);
   const [keywordPage, setKeywordPage] = useState(1);
+  const [displayTabPage, setDisplayTabPage] = useState(1);
 
   const ensureIntervalOption = (value) => {
     const numericValue = Number(value);
@@ -66,14 +76,16 @@ export default function SettingsPage() {
   };
 
   const loadData = async () => {
-    const [sourceData, authorData, keywordData] = await Promise.all([
+    const [sourceData, authorData, keywordData, displayTabData] = await Promise.all([
       api.listSources(),
       api.listAuthorRules(),
-      api.listKeywordRules()
+      api.listKeywordRules(),
+      api.listDisplayTabs()
     ]);
     setSources(sourceData);
     setAuthorRules(authorData);
     setKeywordRules(keywordData);
+    setDisplayTabs(displayTabData);
   };
 
   useEffect(() => {
@@ -97,6 +109,8 @@ export default function SettingsPage() {
       source_type: source.source_type,
       creator_tag: source.creator_tag,
       is_enabled: source.is_enabled,
+      include_in_all: source.include_in_all,
+      tab_ids: source.tab_ids ?? [],
       fetch_interval_min: Number(source.fetch_interval_min)
     });
     loadData();
@@ -152,12 +166,49 @@ export default function SettingsPage() {
     loadData();
   };
 
+  const handleCreateDisplayTab = async () => {
+    await api.createDisplayTab(displayTabDraft);
+    setDisplayTabDraft(emptyDisplayTab);
+    setDisplayTabPage(1);
+    loadData();
+  };
+
+  const handleUpdateDisplayTab = async (tab) => {
+    await api.updateDisplayTab(tab.id, { name: tab.name });
+    loadData();
+  };
+
+  const handleDeleteDisplayTab = async (id) => {
+    await api.deleteDisplayTab(id);
+    loadData();
+  };
+
+  const toggleSourceTab = (source, tabId) => {
+    const currentTabIds = source.tab_ids ?? [];
+    const nextTabIds = currentTabIds.includes(tabId)
+      ? currentTabIds.filter((id) => id !== tabId)
+      : [...currentTabIds, tabId];
+    setSources((prev) =>
+      prev.map((item) => (item.id === source.id ? { ...item, tab_ids: nextTabIds } : item))
+    );
+  };
+
+  const toggleDraftSourceTab = (tabId) => {
+    const currentTabIds = sourceDraft.tab_ids ?? [];
+    const nextTabIds = currentTabIds.includes(tabId)
+      ? currentTabIds.filter((id) => id !== tabId)
+      : [...currentTabIds, tabId];
+    setSourceDraft({ ...sourceDraft, tab_ids: nextTabIds });
+  };
+
   const sortedSources = sortByCreatedAtDesc(sources);
   const sortedAuthorRules = sortByCreatedAtDesc(authorRules);
   const sortedKeywordRules = sortByCreatedAtDesc(keywordRules);
+  const sortedDisplayTabs = sortByCreatedAtDesc(displayTabs);
   const sourceTotalPages = Math.max(1, Math.ceil(sortedSources.length / PAGE_SIZE));
   const authorTotalPages = Math.max(1, Math.ceil(sortedAuthorRules.length / PAGE_SIZE));
   const keywordTotalPages = Math.max(1, Math.ceil(sortedKeywordRules.length / PAGE_SIZE));
+  const displayTabTotalPages = Math.max(1, Math.ceil(sortedDisplayTabs.length / PAGE_SIZE));
   const pagedSources = sortedSources.slice((sourcePage - 1) * PAGE_SIZE, sourcePage * PAGE_SIZE);
   const pagedAuthorRules = sortedAuthorRules.slice(
     (authorPage - 1) * PAGE_SIZE,
@@ -166,6 +217,10 @@ export default function SettingsPage() {
   const pagedKeywordRules = sortedKeywordRules.slice(
     (keywordPage - 1) * PAGE_SIZE,
     keywordPage * PAGE_SIZE
+  );
+  const pagedDisplayTabs = sortedDisplayTabs.slice(
+    (displayTabPage - 1) * PAGE_SIZE,
+    displayTabPage * PAGE_SIZE
   );
 
   useEffect(() => {
@@ -186,9 +241,93 @@ export default function SettingsPage() {
     }
   }, [keywordPage, keywordTotalPages]);
 
+  useEffect(() => {
+    if (displayTabPage > displayTabTotalPages) {
+      setDisplayTabPage(displayTabTotalPages);
+    }
+  }, [displayTabPage, displayTabTotalPages]);
+
   return (
     <section className="page">
       <h2>設定</h2>
+
+      <section className="panel">
+        <div className="panel-header">
+          <h3>タブ一覧</h3>
+          <button
+            className="accordion-toggle"
+            type="button"
+            onClick={() => setExpandedSections((prev) => ({ ...prev, tabs: !prev.tabs }))}
+            aria-expanded={expandedSections.tabs}
+            aria-controls="tabs-panel"
+          >
+            {expandedSections.tabs ? "閉じる" : "開く"}
+          </button>
+        </div>
+        {expandedSections.tabs && (
+          <div className="panel-body" id="tabs-panel">
+            <div className="grid-form">
+              <input
+                type="text"
+                placeholder="タブ名"
+                value={displayTabDraft.name}
+                onChange={(event) => setDisplayTabDraft({ name: event.target.value })}
+              />
+              <button className="primary" type="button" onClick={handleCreateDisplayTab}>
+                追加
+              </button>
+            </div>
+
+            <div className="table">
+              {pagedDisplayTabs.map((tab) => (
+                <div key={tab.id} className="table-row">
+                  <input
+                    type="text"
+                    value={tab.name}
+                    onChange={(event) =>
+                      setDisplayTabs((prev) =>
+                        prev.map((item) =>
+                          item.id === tab.id ? { ...item, name: event.target.value } : item
+                        )
+                      )
+                    }
+                  />
+                  <div className="table-actions">
+                    <button type="button" onClick={() => handleUpdateDisplayTab(tab)}>
+                      保存
+                    </button>
+                    <button type="button" onClick={() => handleDeleteDisplayTab(tab.id)}>
+                      削除
+                    </button>
+                  </div>
+                </div>
+              ))}
+              {displayTabs.length === 0 && <p className="empty">タブはありません。</p>}
+            </div>
+            <div className="pager">
+              <button
+                type="button"
+                onClick={() => setDisplayTabPage((page) => Math.max(1, page - 1))}
+                disabled={displayTabPage === 1}
+              >
+                前へ
+              </button>
+              <span>
+                {displayTabPage} / {displayTabTotalPages} (全{displayTabs.length}件)
+              </span>
+              <button
+                type="button"
+                onClick={() =>
+                  setDisplayTabPage((page) => Math.min(displayTabTotalPages, page + 1))
+                }
+                disabled={displayTabPage === displayTabTotalPages}
+              >
+                次へ
+              </button>
+            </div>
+          </div>
+        )}
+      </section>
 
       <section className="panel">
         <div className="panel-header">
@@ -249,6 +388,16 @@ export default function SettingsPage() {
                 />
                 有効
               </label>
+              <label className="inline">
+                <input
+                  type="checkbox"
+                  checked={sourceDraft.include_in_all}
+                  onChange={(event) =>
+                    setSourceDraft({ ...sourceDraft, include_in_all: event.target.checked })
+                  }
+                />
+                全てに表示
+              </label>
               <select
                 value={sourceDraft.fetch_interval_min}
                 onChange={(event) =>
@@ -261,6 +410,19 @@ export default function SettingsPage() {
                   </option>
                 ))}
               </select>
+              <div className="checkbox-list">
+                {displayTabs.length === 0 && <span className="muted">タブ未登録</span>}
+                {displayTabs.map((tab) => (
+                  <label key={tab.id} className="inline">
+                    <input
+                      type="checkbox"
+                      checked={(sourceDraft.tab_ids ?? []).includes(tab.id)}
+                      onChange={() => toggleDraftSourceTab(tab.id)}
+                    />
+                    {tab.name}
+                  </label>
+                ))}
+              </div>
               <button className="primary" type="button" onClick={handleCreateSource}>
                 追加
               </button>
@@ -335,6 +497,22 @@ export default function SettingsPage() {
                     />
                     有効
                   </label>
+                  <label className="inline">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(source.include_in_all)}
+                      onChange={(event) =>
+                        setSources((prev) =>
+                          prev.map((item) =>
+                            item.id === source.id
+                              ? { ...item, include_in_all: event.target.checked }
+                              : item
+                          )
+                        )
+                      }
+                    />
+                    全てに表示
+                  </label>
                   <select
                     value={source.fetch_interval_min}
                     onChange={(event) =>
@@ -353,6 +531,19 @@ export default function SettingsPage() {
                       </option>
                     ))}
                   </select>
+                  <div className="checkbox-list">
+                    {displayTabs.length === 0 && <span className="muted">タブ未登録</span>}
+                    {displayTabs.map((tab) => (
+                      <label key={tab.id} className="inline">
+                        <input
+                          type="checkbox"
+                          checked={(source.tab_ids ?? []).includes(tab.id)}
+                          onChange={() => toggleSourceTab(source, tab.id)}
+                        />
+                        {tab.name}
+                      </label>
+                    ))}
+                  </div>
                   <div className="table-actions">
                     <button type="button" onClick={() => handleUpdateSource(source)}>
                       保存

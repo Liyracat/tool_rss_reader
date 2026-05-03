@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { api, buildQuery } from "../api.js";
 import TagModal from "../components/TagModal.jsx";
 
-const tabsInitial = { all_count: 0, other_count: 0, keyword_tabs: [] };
+const tabsInitial = { all_count: 0, other_count: 0, keyword_tabs: [], display_tabs: [] };
 const PAGE_SIZE = 50;
 const NOTE_DOMAIN_PREFIX = "https://note.com/";
 
@@ -58,6 +58,9 @@ export default function UnreadPage() {
     };
     if (activeTab.type === "keyword") {
       params.keyword_id = activeTab.keywordId;
+    }
+    if (activeTab.type === "display") {
+      params.display_tab_id = activeTab.tabId;
     }
     return params;
   }, [activeTab, search, sortOrder]);
@@ -208,6 +211,23 @@ export default function UnreadPage() {
         >
           全て ({tabs.all_count})
         </button>
+        <button
+          className={`tab ${activeTab.type === "other" ? "active" : ""}`}
+          type="button"
+          onClick={() => setActiveTab({ type: "other" })}
+        >
+          その他 ({tabs.other_count})
+        </button>
+        {tabs.display_tabs.map((tab) => (
+          <button
+            key={tab.tab_id}
+            className={`tab ${activeTab.tabId === tab.tab_id ? "active" : ""}`}
+            type="button"
+            onClick={() => setActiveTab({ type: "display", tabId: tab.tab_id })}
+          >
+            {tab.name} ({tab.count})
+          </button>
+        ))}
         {tabs.keyword_tabs.map((tab) => (
           <button
             key={tab.keyword_id}
@@ -218,13 +238,6 @@ export default function UnreadPage() {
             {tab.keyword} ({tab.count})
           </button>
         ))}
-        <button
-          className={`tab ${activeTab.type === "other" ? "active" : ""}`}
-          type="button"
-          onClick={() => setActiveTab({ type: "other" })}
-        >
-          その他 ({tabs.other_count})
-        </button>
       </div>
 
       <div className="list">

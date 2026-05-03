@@ -13,12 +13,14 @@ CREATE TABLE IF NOT EXISTS sources (
   source_type        TEXT    NOT NULL,
   creator_tag        TEXT    NOT NULL DEFAULT 'note:creatorName',
   is_enabled         INTEGER NOT NULL DEFAULT 1,
+  include_in_all     INTEGER NOT NULL DEFAULT 1,
   fetch_interval_min INTEGER NOT NULL DEFAULT 180,
   last_fetched_at    TEXT,
   created_at         TEXT    NOT NULL DEFAULT (datetime('now')),
   updated_at         TEXT    NOT NULL DEFAULT (datetime('now')),
   CHECK (source_type IN ('search','tag','user','magazine')),
   CHECK (is_enabled IN (0,1)),
+  CHECK (include_in_all IN (0,1)),
   CHECK (fetch_interval_min >= 1)
 );
 
@@ -70,6 +72,21 @@ CREATE INDEX IF NOT EXISTS idx_items_title
 
 CREATE INDEX IF NOT EXISTS idx_items_creator
   ON items(creator_name);
+
+-- -----------------------------------------
+-- item_sources: 記事がどのRSSから取得対象になったか
+-- -----------------------------------------
+CREATE TABLE IF NOT EXISTS item_sources (
+  item_id    INTEGER NOT NULL,
+  source_id  INTEGER NOT NULL,
+  created_at TEXT    NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (item_id, source_id),
+  FOREIGN KEY (item_id) REFERENCES items(id) ON DELETE CASCADE,
+  FOREIGN KEY (source_id) REFERENCES sources(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_item_sources_source
+  ON item_sources(source_id);
 
 -- -----------------------------------------
 -- tags / item_tags: 保存時タグ（カンマ区切り入力を正規化）
@@ -130,6 +147,28 @@ CREATE INDEX IF NOT EXISTS idx_keyword_rules_type
   ON keyword_rules(rule_type);
 
 -- -----------------------------------------
+-- display_tabs: 手動管理タブ / RSSごとの表示先
+-- -----------------------------------------
+CREATE TABLE IF NOT EXISTS display_tabs (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  name        TEXT    NOT NULL UNIQUE,
+  created_at  TEXT    NOT NULL DEFAULT (datetime('now')),
+  updated_at  TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS source_display_tabs (
+  source_id   INTEGER NOT NULL,
+  tab_id      INTEGER NOT NULL,
+  created_at  TEXT    NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (source_id, tab_id),
+  FOREIGN KEY (source_id) REFERENCES sources(id) ON DELETE CASCADE,
+  FOREIGN KEY (tab_id) REFERENCES display_tabs(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_source_display_tabs_tab
+  ON source_display_tabs(tab_id);
+
+-- -----------------------------------------
 -- 便利VIEW（任意）：保存一覧のフィルタ表示用
 -- -----------------------------------------
 CREATE VIEW IF NOT EXISTS v_items_with_source AS
@@ -177,4 +216,11 @@ AFTER UPDATE ON keyword_rules
 FOR EACH ROW
 BEGIN
   UPDATE keyword_rules SET updated_at = datetime('now') WHERE id = OLD.id;
+END;
+
+CREATE TRIGGER IF NOT EXISTS trg_display_tabs_updated_at
+AFTER UPDATE ON display_tabs
+FOR EACH ROW
+BEGIN
+  UPDATE display_tabs SET updated_at = datetime('now') WHERE id = OLD.id;
 END;

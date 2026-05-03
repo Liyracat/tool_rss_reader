@@ -6,7 +6,7 @@ from typing import Literal, Optional
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, HttpUrl
+from pydantic import BaseModel, Field, HttpUrl
 
 from .db import get_connection, init_db, rows_to_dicts
 from .metrics import process_item_metrics, should_auto_block_item
@@ -23,7 +23,9 @@ class SourceIn(BaseModel):
     source_type: SourceType
     creator_tag: str = "note:creatorName"
     is_enabled: bool = True
+    include_in_all: bool = True
     fetch_interval_min: int = 180
+    tab_ids: list[int] = Field(default_factory=list)
 
 
 class SourceOut(SourceIn):
@@ -71,6 +73,10 @@ class KeywordRuleIn(BaseModel):
     rule_type: RuleTypeKeyword
 
 
+class DisplayTabIn(BaseModel):
+    name: str
+
+
 class FetchJobRequest(BaseModel):
     source_ids: Optional[list[int]] = None
 
@@ -103,8 +109,9 @@ def startup() -> None:
 @app.get("/items/unread", response_model=dict)
 def list_unread_items(
     source_id: Optional[int] = None,
-    tab: Optional[str] = Query(default=None, pattern="^(all|other|keyword)?$"),
+    tab: Optional[str] = Query(default=None, pattern="^(all|other|keyword|display)?$"),
     keyword_id: Optional[int] = None,
+    display_tab_id: Optional[int] = None,
     keyword: Optional[str] = None,
     q: Optional[str] = None,
     limit: int = 50,
@@ -122,6 +129,18 @@ def list_unread_items(
         where.append("i.title LIKE ?")
         params.append(f"%{q}%")
 
+    if tab in (None, "all"):
+        where.append(
+            "EXISTS (SELECT 1 FROM item_sources all_isrc "
+            "JOIN sources all_s ON all_s.id = all_isrc.source_id "
+            "WHERE all_isrc.item_id = i.id AND all_s.include_in_all = 1)"
+        )
+        where.append(
+            "NOT EXISTS (SELECT 1 FROM item_sources hidden_isrc "
+            "JOIN sources hidden_s ON hidden_s.id = hidden_isrc.source_id "
+            "WHERE hidden_isrc.item_id = i.id AND hidden_s.include_in_all = 0)"
+        )
+
     keyword_filter = None
     if tab == "keyword":
         if keyword_id is not None:
@@ -134,8 +153,23 @@ def list_unread_items(
     if tab == "other":
         where.append(
             "NOT EXISTS (SELECT 1 FROM keyword_rules kr "
-            "WHERE kr.rule_type = 'tab' AND i.title LIKE '%' || kr.keyword || '%')"
+            "WHERE kr.rule_type = 'tab' AND i.title LIKE '%' || kr.keyword || '%') "
         )
+        where.append(
+            "NOT EXISTS (SELECT 1 FROM item_sources isrc "
+            "JOIN source_display_tabs sdt ON sdt.source_id = isrc.source_id "
+            "WHERE isrc.item_id = i.id)"
+        )
+
+    if tab == "display":
+        if display_tab_id is None:
+            raise HTTPException(status_code=400, detail="display_tab_id is required for display tab")
+        where.append(
+            "EXISTS (SELECT 1 FROM item_sources isrc "
+            "JOIN source_display_tabs sdt ON sdt.source_id = isrc.source_id "
+            "WHERE isrc.item_id = i.id AND sdt.tab_id = ?)"
+        )
+        params.append(display_tab_id)
 
     if keyword_filter:
         keyword_query, keyword_params = keyword_filter
@@ -187,7 +221,7 @@ def list_unread_items(
             ignored_params,
         )
         conn.commit()
-        count_query = f"SELECT COUNT(*) FROM items i WHERE {where_clause}"
+        count_query = f"SELECT COUNT(*) FROM items i JOIN sources s ON s.id = i.source_id WHERE {where_clause}"
         total = conn.execute(count_query, count_params).fetchone()[0]
         rows = conn.execute(query, params).fetchall()
         logger.info("DBクエリ終了: list_unread_items")
@@ -202,19 +236,39 @@ def list_unread_items(
 def unread_tabs() -> dict:
     with get_connection() as conn:
         logger.info("DBクエリ開始: unread_tabs")
-        total = conn.execute("SELECT COUNT(*) FROM items WHERE status = 'unread'").fetchone()[0]
+        total = conn.execute(
+            "SELECT COUNT(*) FROM items i JOIN sources s ON s.id = i.source_id "
+            "WHERE i.status = 'unread' "
+            "AND EXISTS (SELECT 1 FROM item_sources all_isrc "
+            "JOIN sources all_s ON all_s.id = all_isrc.source_id "
+            "WHERE all_isrc.item_id = i.id AND all_s.include_in_all = 1) "
+            "AND NOT EXISTS (SELECT 1 FROM item_sources hidden_isrc "
+            "JOIN sources hidden_s ON hidden_s.id = hidden_isrc.source_id "
+            "WHERE hidden_isrc.item_id = i.id AND hidden_s.include_in_all = 0)"
+        ).fetchone()[0]
         keyword_tabs = conn.execute(
             "SELECT kr.id, kr.keyword, "
             "(SELECT COUNT(*) FROM items i "
             "WHERE i.status = 'unread' "
             "AND i.title LIKE '%' || kr.keyword || '%') AS count "
-            "FROM keyword_rules kr WHERE kr.rule_type = 'tab'"
+            "FROM keyword_rules kr WHERE kr.rule_type = 'tab' ORDER BY kr.created_at ASC"
+        ).fetchall()
+        display_tabs = conn.execute(
+            "SELECT dt.id, dt.name, "
+            "(SELECT COUNT(DISTINCT i.id) FROM items i "
+            "JOIN item_sources isrc ON isrc.item_id = i.id "
+            "JOIN source_display_tabs sdt ON sdt.source_id = isrc.source_id "
+            "WHERE i.status = 'unread' AND sdt.tab_id = dt.id) AS count "
+            "FROM display_tabs dt ORDER BY dt.created_at ASC"
         ).fetchall()
         other_count = conn.execute(
             "SELECT COUNT(*) FROM items i "
             "WHERE i.status = 'unread' "
             "AND NOT EXISTS (SELECT 1 FROM keyword_rules kr "
-            "WHERE kr.rule_type = 'tab' AND i.title LIKE '%' || kr.keyword || '%')"
+            "WHERE kr.rule_type = 'tab' AND i.title LIKE '%' || kr.keyword || '%') "
+            "AND NOT EXISTS (SELECT 1 FROM item_sources isrc "
+            "JOIN source_display_tabs sdt ON sdt.source_id = isrc.source_id "
+            "WHERE isrc.item_id = i.id)"
         ).fetchone()[0]
         logger.info("DBクエリ終了: unread_tabs")
 
@@ -224,6 +278,9 @@ def unread_tabs() -> dict:
         "other_count": other_count,
         "keyword_tabs": [
             {"keyword_id": row[0], "keyword": row[1], "count": row[2]} for row in keyword_tabs
+        ],
+        "display_tabs": [
+            {"tab_id": row[0], "name": row[1], "count": row[2]} for row in display_tabs
         ],
     }
     logger.info("JSON化終了: unread_tabs")
@@ -461,17 +518,18 @@ def list_sources(
 
     query = (
         "SELECT id, site_name, feed_url, source_type, creator_tag, is_enabled, "
-        "fetch_interval_min, last_fetched_at, created_at FROM sources "
+        "include_in_all, fetch_interval_min, last_fetched_at, created_at FROM sources "
         f"{where_clause} ORDER BY created_at DESC"
     )
 
     with get_connection() as conn:
         logger.info("DBクエリ開始: list_sources")
         rows = conn.execute(query, params).fetchall()
+        tab_map = get_source_tab_map(conn, [row["id"] for row in rows])
         logger.info("DBクエリ終了: list_sources")
 
     logger.info("JSON化開始: list_sources")
-    sources = [SourceOut(**row) for row in rows]
+    sources = [SourceOut(**dict(row), tab_ids=tab_map.get(row["id"], [])) for row in rows]
     logger.info("JSON化終了: list_sources")
     return sources
 
@@ -480,25 +538,27 @@ def list_sources(
 def create_source(payload: SourceIn) -> SourceOut:
     with get_connection() as conn:
         cur = conn.execute(
-            "INSERT INTO sources (site_name, feed_url, source_type, creator_tag, is_enabled, fetch_interval_min) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
+            "INSERT INTO sources (site_name, feed_url, source_type, creator_tag, is_enabled, "
+            "include_in_all, fetch_interval_min) VALUES (?, ?, ?, ?, ?, ?, ?)",
             (
                 payload.site_name,
                 str(payload.feed_url),
                 payload.source_type,
                 payload.creator_tag,
                 1 if payload.is_enabled else 0,
+                1 if payload.include_in_all else 0,
                 payload.fetch_interval_min,
             ),
         )
         source_id = cur.lastrowid
+        replace_source_tabs(conn, source_id, payload.tab_ids)
         row = conn.execute(
             "SELECT id, site_name, feed_url, source_type, creator_tag, is_enabled, "
-            "fetch_interval_min, last_fetched_at, created_at FROM sources WHERE id = ?",
+            "include_in_all, fetch_interval_min, last_fetched_at, created_at FROM sources WHERE id = ?",
             (source_id,),
         ).fetchone()
         conn.commit()
-    return SourceOut(**row)
+    return SourceOut(**dict(row), tab_ids=payload.tab_ids)
 
 
 @app.put("/sources/{source_id}", response_model=SourceOut)
@@ -506,26 +566,28 @@ def update_source(source_id: int, payload: SourceIn) -> SourceOut:
     with get_connection() as conn:
         cur = conn.execute(
             "UPDATE sources SET site_name = ?, feed_url = ?, source_type = ?, creator_tag = ?, "
-            "is_enabled = ?, fetch_interval_min = ? WHERE id = ?",
+            "is_enabled = ?, include_in_all = ?, fetch_interval_min = ? WHERE id = ?",
             (
                 payload.site_name,
                 str(payload.feed_url),
                 payload.source_type,
                 payload.creator_tag,
                 1 if payload.is_enabled else 0,
+                1 if payload.include_in_all else 0,
                 payload.fetch_interval_min,
                 source_id,
             ),
         )
         if cur.rowcount == 0:
             raise HTTPException(status_code=404, detail="source not found")
+        replace_source_tabs(conn, source_id, payload.tab_ids)
         row = conn.execute(
             "SELECT id, site_name, feed_url, source_type, creator_tag, is_enabled, "
-            "fetch_interval_min, last_fetched_at, created_at FROM sources WHERE id = ?",
+            "include_in_all, fetch_interval_min, last_fetched_at, created_at FROM sources WHERE id = ?",
             (source_id,),
         ).fetchone()
         conn.commit()
-    return SourceOut(**row)
+    return SourceOut(**dict(row), tab_ids=payload.tab_ids)
 
 
 @app.delete("/sources/{source_id}")
@@ -691,6 +753,68 @@ def delete_keyword_rule(rule_id: int) -> dict:
     return {"deleted": True}
 
 
+@app.get("/display-tabs")
+def list_display_tabs() -> list[dict]:
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT id, name, created_at FROM display_tabs ORDER BY created_at DESC"
+        ).fetchall()
+    return rows_to_dicts(rows)
+
+
+@app.post("/display-tabs")
+def create_display_tab(payload: DisplayTabIn) -> dict:
+    name = payload.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="tab name is required")
+    with get_connection() as conn:
+        try:
+            cur = conn.execute("INSERT INTO display_tabs (name) VALUES (?)", (name,))
+        except Exception as exc:
+            if "UNIQUE" in str(exc):
+                raise HTTPException(status_code=409, detail="display tab already exists")
+            raise
+        tab_id = cur.lastrowid
+        row = conn.execute(
+            "SELECT id, name, created_at FROM display_tabs WHERE id = ?",
+            (tab_id,),
+        ).fetchone()
+        conn.commit()
+    return dict(row)
+
+
+@app.put("/display-tabs/{tab_id}")
+def update_display_tab(tab_id: int, payload: DisplayTabIn) -> dict:
+    name = payload.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="tab name is required")
+    with get_connection() as conn:
+        try:
+            cur = conn.execute("UPDATE display_tabs SET name = ? WHERE id = ?", (name, tab_id))
+        except Exception as exc:
+            if "UNIQUE" in str(exc):
+                raise HTTPException(status_code=409, detail="display tab already exists")
+            raise
+        if cur.rowcount == 0:
+            raise HTTPException(status_code=404, detail="display tab not found")
+        row = conn.execute(
+            "SELECT id, name, created_at FROM display_tabs WHERE id = ?",
+            (tab_id,),
+        ).fetchone()
+        conn.commit()
+    return dict(row)
+
+
+@app.delete("/display-tabs/{tab_id}")
+def delete_display_tab(tab_id: int) -> dict:
+    with get_connection() as conn:
+        cur = conn.execute("DELETE FROM display_tabs WHERE id = ?", (tab_id,))
+        if cur.rowcount == 0:
+            raise HTTPException(status_code=404, detail="display tab not found")
+        conn.commit()
+    return {"deleted": True}
+
+
 @app.post("/jobs/fetch-now")
 def fetch_now(payload: FetchJobRequest) -> dict:
     sources = payload.source_ids or []
@@ -714,3 +838,27 @@ def update_item_tags(conn, item_id: int, tags: list[str]) -> None:
         conn.execute("INSERT OR IGNORE INTO tags (name) VALUES (?)", (tag,))
         tag_id = conn.execute("SELECT id FROM tags WHERE name = ?", (tag,)).fetchone()[0]
         conn.execute("INSERT OR IGNORE INTO item_tags (item_id, tag_id) VALUES (?, ?)", (item_id, tag_id))
+
+
+def get_source_tab_map(conn, source_ids: list[int]) -> dict[int, list[int]]:
+    if not source_ids:
+        return {}
+    placeholders = ",".join("?" for _ in source_ids)
+    rows = conn.execute(
+        f"SELECT source_id, tab_id FROM source_display_tabs WHERE source_id IN ({placeholders})",
+        source_ids,
+    ).fetchall()
+    result: dict[int, list[int]] = {source_id: [] for source_id in source_ids}
+    for row in rows:
+        result[row["source_id"]].append(row["tab_id"])
+    return result
+
+
+def replace_source_tabs(conn, source_id: int, tab_ids: list[int]) -> None:
+    clean_ids = sorted({int(tab_id) for tab_id in tab_ids})
+    conn.execute("DELETE FROM source_display_tabs WHERE source_id = ?", (source_id,))
+    for tab_id in clean_ids:
+        conn.execute(
+            "INSERT INTO source_display_tabs (source_id, tab_id) VALUES (?, ?)",
+            (source_id, tab_id),
+        )

@@ -26,6 +26,8 @@ def init_db() -> None:
     with get_connection() as conn:
         conn.executescript(schema)
         ensure_item_metrics_columns(conn)
+        ensure_source_columns(conn)
+        backfill_item_sources(conn)
         conn.commit()
 
 
@@ -51,3 +53,20 @@ def ensure_item_metrics_columns(conn: sqlite3.Connection) -> None:
     for name, definition in column_defs.items():
         if name not in columns:
             conn.execute(f"ALTER TABLE items ADD COLUMN {name} {definition}")
+
+
+def ensure_source_columns(conn: sqlite3.Connection) -> None:
+    columns = {row["name"] for row in conn.execute("PRAGMA table_info(sources)").fetchall()}
+    column_defs = {
+        "include_in_all": "INTEGER NOT NULL DEFAULT 1 CHECK (include_in_all IN (0,1))",
+    }
+    for name, definition in column_defs.items():
+        if name not in columns:
+            conn.execute(f"ALTER TABLE sources ADD COLUMN {name} {definition}")
+
+
+def backfill_item_sources(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        "INSERT OR IGNORE INTO item_sources (item_id, source_id) "
+        "SELECT id, source_id FROM items"
+    )
